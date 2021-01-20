@@ -35,10 +35,10 @@ class SAC_Agent:
                 action = self.env.action_space.sample()
                 new_state, reward, done, _ = self.env.step(action)
                 print("\tStep: ", step, "Reward = ", reward)
+                if reward > -1:
+                    return True
                 if done:
-                    if reward > -1:
-                        return True
-                    elif episode == batch_size-1:
+                    if episode == batch_size-1:
                         return False
                     break
 
