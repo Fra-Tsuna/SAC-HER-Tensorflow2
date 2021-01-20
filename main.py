@@ -11,7 +11,7 @@ import gym
 
 
 # environment parameters
-ENV_NAME = "FetchSlide-v1"
+ENV_NAME = "FetchPush-v1"
 
 # learning parameters
 RANDOM_BATCH = 1000
