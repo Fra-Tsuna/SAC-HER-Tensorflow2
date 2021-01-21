@@ -8,6 +8,9 @@
 import tensorflow as tf
 import gym
 
+# Math libraries
+import numpy as np
+
 # Time management libraries
 import time
 
@@ -43,7 +46,7 @@ class HER_SAC_Agent:
         self.her_buffer = her_buffer
         self.env.reset()
 
-    def get_buffer(self):
+    def getBuffer(self):
         """
         Returns HER buffer of the agent
         """
@@ -58,12 +61,18 @@ class HER_SAC_Agent:
             print("Episode ", episode)
             step = 0
             while True:
+
+                # Play
                 step += 1
                 self.env.render()
                 action = self.env.action_space.sample()
                 new_state, reward, done, _ = self.env.step(action)
+
+                # Store in HER
+                state_goal = np.concatenate([state['observation'], state['desired_goal']])
+                new_state_goal = np.concatenate([new_state['observation'], state['desired_goal']])
                 self.her_buffer.append(Experience(
-                    state, action, reward, new_state, done))
+                    state_goal, action, reward, new_state_goal, done))
                 state = new_state
                 print("\tStep: ", step, "Reward = ", reward)
                 if reward > -1:
@@ -82,7 +91,6 @@ if __name__ == '__main__':
     env = gym.make(ENV_NAME)
     obs_space = env.observation_space.shape
     n_actions = env.action_space.shape[0]
-    print(obs_space, n_actions)
 
     # Agent initialization
     her_buff = HER_Buffer(HER_CAPACITY)
@@ -90,7 +98,7 @@ if __name__ == '__main__':
 
     # Random playing (useful for testing)
     success = agent.random_play(RANDOM_BATCH)
-    buffer = agent.get_buffer()
+    buffer = agent.getBuffer()
     if success:
         print("Goal achieved! Good job!")
     else:
