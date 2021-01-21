@@ -3,10 +3,12 @@
 import numpy as np
 from collections import namedtuple, deque
 
-
+""" 
+Structure of an item in the Hindsight Experience Replay 
+N.B: || denotes concatenation
+"""
 Experience = namedtuple("Experience", field_names = \
-    ['state', 'action', 'reward', 'new_state', 'done'])
-
+    ['state||goal', 'action', 'reward', 'new_state||goal', 'done'])
 
 
 class HER_Buffer:
