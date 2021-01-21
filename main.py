@@ -5,7 +5,15 @@
 
 
 # Learning libraries
+import tensorflow as tf
 import gym
+
+# Time management libraries
+import time
+
+# Personal libraries
+from HER import HER_Buffer, Experience
+
 
 # ___________________________________________________ Parameters ___________________________________________________ #
 
@@ -15,18 +23,38 @@ ENV_NAME = "FetchPush-v1"
 
 # learning parameters
 RANDOM_BATCH = 1000
+HER_CAPACITY = 1000
 
 # ______________________________________________ Classes and Functions ______________________________________________ #
 
 
-class SAC_Agent:
-    def __init__(self, env):
+class HER_SAC_Agent:
+
+    def __init__(self, env, her_buffer):
+        """
+        Soft Actor Critic + Hindsight Experience Replay Agent
+        
+        Parameters
+        ----------
+        env: gym environment to solve
+        her_buffer: Hindsight Experience Replay buffer
+        """
         self.env = env
+        self.her_buffer = her_buffer
         self.env.reset()
 
+    def get_buffer(self):
+        """
+        Returns HER buffer of the agent
+        """
+        return self.her_buffer
+
     def random_play(self, batch_size):
+        """
+        Play a batch_size number of episode with random policy
+        """
         for episode in range(batch_size):
-            self.env.reset()
+            state = self.env.reset()
             print("Episode ", episode)
             step = 0
             while True:
@@ -34,6 +62,9 @@ class SAC_Agent:
                 self.env.render()
                 action = self.env.action_space.sample()
                 new_state, reward, done, _ = self.env.step(action)
+                self.her_buffer.append(Experience(
+                    state, action, reward, new_state, done))
+                state = new_state
                 print("\tStep: ", step, "Reward = ", reward)
                 if reward > -1:
                     return True
@@ -54,9 +85,16 @@ if __name__ == '__main__':
     print(obs_space, n_actions)
 
     # Agent initialization
-    agent = SAC_Agent(env)
+    her_buff = HER_Buffer(HER_CAPACITY)
+    agent = HER_SAC_Agent(env, her_buff)
+
+    # Random playing (useful for testing)
     success = agent.random_play(RANDOM_BATCH)
+    buffer = agent.get_buffer()
     if success:
         print("Goal achieved! Good job!")
     else:
         print("Bad play...")
+    example_sample = buffer.sample()
+    time.sleep(1)
+    print("Example of sampling from the exp buffer: \n", example_sample)
