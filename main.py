@@ -41,56 +41,69 @@ class HER_SAC_Agent:
     def getBuffer(self):
         return self.her_buffer
 
-    def play_episode(self, criterion="random", store=False):
+    def store_experience(self, experience, goal):
+        """
+        Store an experience in the HER buffer
+
+        Parameters
+        ----------
+        experience: experience to store
+        goal: the goal to concatenate to the states
+        """
+        state = experience.state_goal
+        action = experience.action
+        reward = self.env.compute_reward(state['achieved_goal'], goal, None)
+        new_state = experience.new_state_goal
+        done = experience.done
+        state_goal = np.concatenate([state['observation'], goal])
+        new_state_goal = np.concatenate([new_state['observation'], goal])
+        self.her_buffer.append(
+            Experience(state_goal, action, reward, new_state_goal, done))
+
+    def play_episode(self, criterion="random"):
         """
         Play an episode choosing actions according to the selected criterion
         
         Parameters
         ----------
         criterion: strategy to choose actions ('random' or 'SAC')
-        store: if True, all the experiences are stored in the HER buffer
 
         Returns
         -------
-        last_state: state in which the agent stands after last action
-        final_reward: last reward obtained by the agent
+        experiences: all experiences taken by the agent in the episode 
         """
         state = self.env.reset()
-        last_state = state
-        final_reward = None
+        experiences = []
         done = False
+        step = 0
         while not done:
-
-            # Play
+            step += 1
             self.env.render()
             if criterion == "random":
                 action = self.env.action_space.sample()
             elif criterion == "SAC":
-                #action = ACTION SELECTED WITH SAC
+                # TO DO: action = ACTION SELECTED WITH SAC ...
+                action = 0
             else:
-                print("Wrong criterion for choosing the action")
+                print("ERROR: Wrong criterion for choosing the action")
             new_state, reward, done, _ = self.env.step(action)
-
-            # Store in HER
-            if store:
-                state_goal = np.concatenate([state['observation'], state['desired_goal']])
-                new_state_goal = np.concatenate([new_state['observation'], 
-                                                state['desired_goal']])
-                self.her_buffer.append(
-                    Experience(state_goal, action, reward, new_state_goal, done))
+            experiences.append(Experience(state, action, reward, new_state, done))
             state = new_state
-            if done:
-                last_state = new_state
-                final_reward = reward
             print("\tStep: ", step, "Reward = ", reward)
-        return last_state, final_reward
+        return experiences
 
-    #def train(self, batch_size):
-    #    """
-    #    Train the agent with a batch_size number of episodes
-    #    """
-    #    for episode in batch_size:
-            
+    def train(self, batch_size):
+        """
+        Train the agent with a batch_size number of episodes
+        """
+        for episode in range(batch_size):
+            experiences = \
+                self.play_episode(criterion="SAC")
+            self.store_experience(experiences[-1], experiences[0].state['desired_goal'])
+            for exp in experiences:
+                self.store_experience(exp, experience[-1].state_goal['achieved_goal'])
+        
+        # TO DO: Minibatch and optimization [...]
 
     def random_play(self, batch_size):
         """
@@ -100,8 +113,8 @@ class HER_SAC_Agent:
         for episode in range(batch_size):
             state = self.env.reset()
             print("Random episode ", episode)
-            actual_state, actual_reward = self.play_episode()
-            if actual_reward > -1:
+            experiences = self.play_episode()
+            if experiences[-1].reward > -1:
                 return True
         return False
 
@@ -123,7 +136,6 @@ if __name__ == '__main__':
 
     # Random playing (useful for testing)
     success = agent.random_play(RANDOM_BATCH)
-    buffer = agent.getBuffer()
     if success:
         print("Goal achieved! Good job!")
     else:
