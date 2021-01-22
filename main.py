@@ -34,53 +34,78 @@ HER_CAPACITY = 1000
 class HER_SAC_Agent:
 
     def __init__(self, env, her_buffer):
-        """
-        Soft Actor Critic + Hindsight Experience Replay Agent
-        
-        Parameters
-        ----------
-        env: gym environment to solve
-        her_buffer: Hindsight Experience Replay buffer
-        """
         self.env = env
         self.her_buffer = her_buffer
         self.env.reset()
 
     def getBuffer(self):
-        """
-        Returns HER buffer of the agent
-        """
         return self.her_buffer
+
+    def play_episode(self, criterion="random", store=False):
+        """
+        Play an episode choosing actions according to the selected criterion
+        
+        Parameters
+        ----------
+        criterion: strategy to choose actions ('random' or 'SAC')
+        store: if True, all the experiences are stored in the HER buffer
+
+        Returns
+        -------
+        last_state: state in which the agent stands after last action
+        final_reward: last reward obtained by the agent
+        """
+        state = self.env.reset()
+        last_state = state
+        final_reward = None
+        done = False
+        while not done:
+
+            # Play
+            self.env.render()
+            if criterion == "random":
+                action = self.env.action_space.sample()
+            elif criterion == "SAC":
+                #action = ACTION SELECTED WITH SAC
+            else:
+                print("Wrong criterion for choosing the action")
+            new_state, reward, done, _ = self.env.step(action)
+
+            # Store in HER
+            if store:
+                state_goal = np.concatenate([state['observation'], state['desired_goal']])
+                new_state_goal = np.concatenate([new_state['observation'], 
+                                                state['desired_goal']])
+                self.her_buffer.append(
+                    Experience(state_goal, action, reward, new_state_goal, done))
+            state = new_state
+            if done:
+                last_state = new_state
+                final_reward = reward
+            print("\tStep: ", step, "Reward = ", reward)
+        return last_state, final_reward
+
+    #def train(self, batch_size):
+    #    """
+    #    Train the agent with a batch_size number of episodes
+    #    """
+    #    for episode in batch_size:
+            
 
     def random_play(self, batch_size):
         """
         Play a batch_size number of episode with random policy
+        Returns True if the agent reach the goal
         """
         for episode in range(batch_size):
             state = self.env.reset()
-            print("Episode ", episode)
-            step = 0
-            while True:
+            print("Random episode ", episode)
+            actual_state, actual_reward = self.play_episode()
+            if actual_reward > -1:
+                return True
+        return False
 
-                # Play
-                step += 1
-                self.env.render()
-                action = self.env.action_space.sample()
-                new_state, reward, done, _ = self.env.step(action)
 
-                # Store in HER
-                state_goal = np.concatenate([state['observation'], state['desired_goal']])
-                new_state_goal = np.concatenate([new_state['observation'], state['desired_goal']])
-                self.her_buffer.append(Experience(
-                    state_goal, action, reward, new_state_goal, done))
-                state = new_state
-                print("\tStep: ", step, "Reward = ", reward)
-                if reward > -1:
-                    return True
-                if done:
-                    if episode == batch_size-1:
-                        return False
-                    break
 
 # _____________________________________________________ Main _____________________________________________________ #
 
@@ -103,6 +128,3 @@ if __name__ == '__main__':
         print("Goal achieved! Good job!")
     else:
         print("Bad play...")
-    example_sample = buffer.sample()
-    time.sleep(1)
-    print("Example of sampling from the exp buffer: \n", example_sample)
