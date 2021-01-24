@@ -15,7 +15,7 @@ CRITIC_DENSE_2 = 128
 
 class CriticNetwork(Model):
 
-    def __init__(self, beta, input_dim, action_dim):
+    def __init__(self, beta, input_dim):
         super.__init__()
 
         self.net = Sequential()
