@@ -3,27 +3,51 @@
 
 from HER import HER_Buffer, Experience
 import tensorflow as tf
+from tensorflow.keras.optimizers import Adam
 import numpy as np
-import models
+from models import ActorNetwork, CriticNetwork, ValueNetwork
+
+
+# Learning parameters
+EPSILON = 0.7
+LEARNING_RATE = 0.01
 
 
 class HER_SAC_Agent:
 
-    def __init__(self, env, her_buffer):
+    def __init__(self, env, her_buffer, optimizer='Adam'):
         self.env = env
         self.her_buffer = her_buffer
         self.env.reset()
+        self.actor = \
+            ActorNetwork(env.observation_space.shape, env.action_space.shape[0])
+        self.critic_1 = \
+            CriticNetwork(env.observation_space.shape)
+        self.critic_2 = \
+            CriticNetwork(env.observation_space.shape)
+        self.value = \
+            ValueNetwork(env.observation_space.shape)
+        self.target_value = \
+            ValueNetwork(env.observation_space.shape)
+        if optimizer == 'Adam':
+            self.optimizer = Adam(learning_rate=LEARNING_RATE)
+        else:
+            self.optimizer = None
+            print("Error: Wrong optimizer for the agent")
+
+         # TO DO: Other initializations ...
 
     def getBuffer(self):
         return self.her_buffer
 
-    def play_episode(self, criterion="random"):
+    def play_episode(self, criterion="random", epsilon=0):
         """
         Play an episode choosing actions according to the selected criterion
         
         Parameters
         ----------
         criterion: strategy to choose actions ('random' or 'SAC')
+        epsilon: random factor for epsilon-greedy strategy
 
         Returns
         -------
@@ -39,8 +63,11 @@ class HER_SAC_Agent:
             if criterion == "random":
                 action = self.env.action_space.sample()
             elif criterion == "SAC":
-                # TO DO: action = ACTION SELECTED WITH SAC ...
-                action = 0
+                if np.random.random() < epsilon:
+                    action = self.env.action_space.sample()
+                else:
+                    # TO DO: action = ACTION SELECTED WITH SAC ...
+                    action = 0
             else:
                 print("ERROR: Wrong criterion for choosing the action")
             new_state, reward, done, _ = self.env.step(action)
