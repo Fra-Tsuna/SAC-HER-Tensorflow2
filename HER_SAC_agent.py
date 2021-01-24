@@ -10,7 +10,7 @@ from models import ActorNetwork, CriticNetwork, ValueNetwork
 
 # Learning parameters
 EPSILON = 0.7
-LEARNING_RATE = 0.01
+LEARNING_RATE = 3e-4
 
 
 class HER_SAC_Agent:
