@@ -71,10 +71,10 @@ class CriticNetwork(Model):
         self.net.add(layers.ReLU())
         self.net.add(layers.Dense(1))
 
-        def forward(self, state, action):
-            state_action = tf.concat([state, action], axis=1)
-            q_value = self.net(state_action)
-            return q_value
+    def forward(self, state, action):
+        state_action = tf.concat([state, action], axis=1)
+        q_value = self.net(state_action)
+        return q_value
 
 
 class ValueNetwork(Model):
