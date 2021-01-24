@@ -3,19 +3,64 @@
 
 import numpy as np
 import tensorflow as tf
-from tf.keras import \
+import tensorflow_probability as tfp
+from tensorflow.keras import \
     Model, Sequential, Input, layers
-from tf.keras.optimizers import Adam
 
 
 # Hyperparameters
+ACTOR_DENSE_1 = 256
+ACTOR_DENSE_2 = 256
 CRITIC_DENSE_1 = 128
 CRITIC_DENSE_2 = 128
+VALUE_DENSE_1 = 128
+VALUE_DENSE_2 = 128
 
+NOISE = 1e-6
+
+
+class ActorNetwork(Model):
+
+    def __init__(self, input_dim, action_dim):
+        super.__init__()
+
+        self.net = Sequential()
+        #self.net.add(layers.Input(*self.input_dim,))           ?
+        self.net.add(layers.Input(shape=input_dim))
+        self.net.add(layers.Dense((ACTOR_DENSE_1))
+        self.net.add(layers.ReLU())
+        self.net.add(layers.Dense(ACTOR_DENSE_2))
+        self.net.add(layers.ReLU())
+
+        self.mean = self.net.add(layers.Dense(action_dim))
+        self.std_dev = self.net.add(layers.Dense(action_dim))
+
+    def forward(self, state, noisy=True):
+
+        # policy parameters 
+        mi = self.mean(state)
+        #sigma = np.clip(self.std_dev(state), NOISE, 1)         ?
+        sigma = tf.clip(self.std_dev(state), NOISE, 1)
+        policy = tfp.distributions.Normal(mi, sigma)
+        noise = tfp.distributions.Normal(0,1).sample()
+
+        # action selection
+        if noisy:
+            actions_tensor = noise + policy.sample()
+        else
+            actions_tensor = policy.sample()
+        action = tf.tanh(actions_tensor)
+        log_probs = policy.log_prob(actions_tensor)
+
+        # enforcing action bounds (SAC paper appendix C)
+        log_likelihood = log_probs -
+            tf.reduce_sum(tf.math.log(1 - action**2 + NOISE), axis=1, keepdims=True)
+
+        return action, log_likelihood
 
 class CriticNetwork(Model):
 
-    def __init__(self, beta, input_dim):
+    def __init__(self, input_dim):
         super.__init__()
 
         self.net = Sequential()
@@ -28,74 +73,23 @@ class CriticNetwork(Model):
 
         def forward(self, state, action):
             state_action = tf.concat([state, action], axis=1)
-            out = self.net(state_action)
-            return out
-        
-class ValueNetwork():
-    def __init__(self, beta, input_dims, l1_dims=256, l2_dims=256):
-        self.input_dims=input_dims
-        self.l1_dims=l1_dims
-        self.l2_dims=l2_dims
+            q_value = self.net(state_action)
+            return q_value
 
-        self.model=Sequential()
-        self.model.add(Input(*self.input_dims,))
-        self.model.add(Dense(self.l1_dims))
-        self.model.add(ReLU)
-        self.model.add(Dense(self.l2_dims))
-        self.model.add(ReLU)
-        self.model.add(Dense(1))
-        self.optimizer=Adam(learning_rate=beta)
-        self.model.compile(optimizer=optimizer)
+
+class ValueNetwork(Model):
+
+    def __init__(self, input_dim):
+        super.__init__()
+
+        self.net = Sequential()
+        self.net.add(Input(shape=input_dim))
+        self.net.add(layers.Dense(VALUE_DENSE_1))
+        self.net.add(layers.ReLU())
+        self.net.add(layers.Dense(VALUE_DENSE_2))
+        self.net.add(layers.ReLU)
+        self.net.add(Dense(1))
     
     def forward(self, state):
-        return self.model.predict(state)
-
-    
-class ActorNetwork():
-    def __init__(self, alpha, input_dims, max_action, l1_dims=256, l2_dims=256, n_actions=2):
-        self.input_dims=input_dims
-        self.max_action=max_action
-        self.l1_dims=l1_dims
-        self.l2_dims=l2_dims
-        self.n_actions=n_actions
-        self.noise_factor=1e-6
-
-        self.model=Sequential()
-        self.model.add(Input(*self.input_dims,))
-        self.model.add(Dense(self.l1_dims))
-        self.model.add(ReLU)
-        self.model.add(Dense(self.l2_dims))
-        self.model.add(ReLU)
-
-        self.mu=self.model
-        self.mu.add(Dense(self.n_actions))
-        self.sigma=self.model
-        self.sigma.add(Dense(self.n_actions))
-
-        self.optimizer=Adam(learning_rate=alpha)
-        self.mu.compile(optimizer=optimizer)
-        self.sigma.compile(optimizer=optimizer)
-
-    def forward(self, state):
-        mu=self.mu.predict(state)
-        sigma=self.sigma.predict(state)
-        sigma=np.clip(sigma,self.noise_factor,1)
-
-    def sample_normal(self, state, reparam=True):
-        noise = tfd.Normal(0,1).sample()
-        mu, sigma = forward(state)
-        prob = tfd.Normal(mu, sigma)
-
-        if reparam = True:
-            actions = noise + prob.sample()
-        else
-            actions = prob.sample()
-        
-        action = tf.tanh(actions)
-        log_probs=prob.log_prob(actions)
-        log_probs -= np.log(1-(action)^2 + self.noise_factor)
-        #bisogna fare la somma degli elementi, ma non capisco se 
-        #log probs è una lista di elementi o una qualche altra 
-        #struttura dati
-
-        return action, log_probs
+        value = self.net(state)
+        return value
