@@ -2,8 +2,6 @@ from HER import HER_Buffer, Experience
 import tensorflow as tf
 import numpy as np
 
-RANDOM_BATCH = 1000
-HER_CAPACITY = 1000
 
 class HER_SAC_Agent:
 
