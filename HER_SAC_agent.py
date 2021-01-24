@@ -9,8 +9,13 @@ from models import ActorNetwork, CriticNetwork, ValueNetwork
 
 
 # Learning parameters
-EPSILON = 0.7
+EPSILON_START = 1.0
+EPSILON_FINAL = 0.01
+EPSILON_DECAY_LAST_ITER = 1000000
 LEARNING_RATE = 3e-4
+
+GAMMA = 0.99
+TAU = 0.005
 
 
 class HER_SAC_Agent:
@@ -35,8 +40,6 @@ class HER_SAC_Agent:
             self.optimizer = None
             print("Error: Wrong optimizer for the agent")
 
-         # TO DO: Other initializations ...
-
     def getBuffer(self):
         return self.her_buffer
 
@@ -48,7 +51,6 @@ class HER_SAC_Agent:
         ----------
         criterion: strategy to choose actions ('random' or 'SAC')
         epsilon: random factor for epsilon-greedy strategy
-
         Returns
         -------
         experiences: all experiences taken by the agent in the episode 
@@ -66,8 +68,8 @@ class HER_SAC_Agent:
                 if np.random.random() < epsilon:
                     action = self.env.action_space.sample()
                 else:
-                    # TO DO: action = ACTION SELECTED WITH SAC ...
-                    action = 0
+                    action, _ = self.actor.forward(state)
+                    #action = action[0]                             ?
             else:
                 print("ERROR: Wrong criterion for choosing the action")
             new_state, reward, done, _ = self.env.step(action)
@@ -80,8 +82,13 @@ class HER_SAC_Agent:
         """
         Train the agent with a batch_size number of episodes
         """
+        epsilon = EPSILON_START
+        iterations = 0
         for episode in range(batch_size):
-            experiences = self.play_episode(criterion="SAC")
+            epsilon = max(EPSILON_FINAL, EPSILON_START -
+                          iterations / EPSILON_DECAY_LAST_ITER)
+            experiences = self.play_episode(criterion="SAC", epsilon)
+            iterations += len(experiences)
             goal = experiences[-1].state_goal['desired_goal']
             achieved_goal = experiences[-1].state_goal['achieved_goal']
             reward = self.env.compute_reward(achieved_goal, goal, None)
