@@ -11,10 +11,10 @@ from tensorflow.keras import \
 # Hyperparameters
 ACTOR_DENSE_1 = 256
 ACTOR_DENSE_2 = 256
-CRITIC_DENSE_1 = 128
-CRITIC_DENSE_2 = 128
-VALUE_DENSE_1 = 128
-VALUE_DENSE_2 = 128
+CRITIC_DENSE_1 = 256
+CRITIC_DENSE_2 = 256
+VALUE_DENSE_1 = 256
+VALUE_DENSE_2 = 256
 
 NOISE = 1e-6
 
@@ -40,7 +40,7 @@ class ActorNetwork(Model):
         # policy parameters 
         mi = self.mean(state)
         #sigma = np.clip(self.std_dev(state), NOISE, 1)         ?
-        sigma = tf.clip(self.std_dev(state), NOISE, 1)
+        sigma = tf.clip_by_value(self.std_dev(state), NOISE, 1)
         policy = tfp.distributions.Normal(mi, sigma)
         noise = tfp.distributions.Normal(0,1).sample()
 
