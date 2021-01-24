@@ -1,6 +1,7 @@
 from HER import HER_Buffer, Experience
 import tensorflow as tf
 import numpy as np
+import models
 
 
 class HER_SAC_Agent:
