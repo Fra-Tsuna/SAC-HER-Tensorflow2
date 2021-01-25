@@ -7,6 +7,7 @@
 # Learning libraries
 import tensorflow as tf
 import gym
+from tensorboardX import SummaryWriter
 
 # Math libraries
 import numpy as np
@@ -35,6 +36,7 @@ HER_CAPACITY = 100000
 EPSILON_START = 1.0
 EPSILON_FINAL = 0.01
 EPSILON_DECAY_LAST_ITER = 1000000
+LEARNING_RATE = 3e-4
 
 # _____________________________________________________ Main _____________________________________________________ #
 
@@ -51,7 +53,7 @@ if __name__ == '__main__':
     agent = HER_SAC_Agent(env, her_buff)
 
     # Summary writer for live trends
-    writer = SummaryWriter(log_dir="/graphics", comment="LR"+LEARNING_RATE)
+    writer = SummaryWriter(log_dir="/home/francesco/Scrivania/Test", comment="LR"+ str(LEARNING_RATE)) ### directory hard-coded###
 
     # Pre-training initialization
     iterations = 0
