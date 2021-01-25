@@ -10,7 +10,7 @@ from tensorboardX import SummaryWriter
 
 
 # Learning parameters
-REWARD_SCALE = 
+REWARD_SCALE = 5
 LEARNING_RATE = 3e-4
 GAMMA = 0.99
 TAU = 0.005
