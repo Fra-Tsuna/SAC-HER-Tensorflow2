@@ -66,7 +66,7 @@ if __name__ == '__main__':
         for episode in range(BATCH_SIZE):
             epsilon = max(EPSILON_FINAL, EPSILON_START -
                           iterations / EPSILON_DECAY_LAST_ITER)
-            experiences = agent.play_episode(criterion="SAC", epsilon)
+            experiences = agent.play_episode(criterion="SAC", epsilon=epsilon)
             reward_vect.append(exp.reward for exp in experiences)
             iterations += len(experiences)
             goal = experiences[-1].state_goal['desired_goal']
@@ -79,7 +79,7 @@ if __name__ == '__main__':
                     agent.env.compute_reward(exp.state_goal['achieved_goal'], goal, None)
                 agent.getBuffer().store_experience(exp, reward, goal)
 
-        ## Minibatch sample and optimization
+        ## Minibatch sample and optimization 
         experiences = agent.getBuffer().sample(minibatch)
         v_loss, c1_loss, c2_loss, act_loss = \
             agent.optimization(experiences)
