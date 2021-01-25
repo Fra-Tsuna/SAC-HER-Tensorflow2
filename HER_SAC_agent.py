@@ -10,6 +10,7 @@ from tensorboardX import SummaryWriter
 
 
 # Learning parameters
+REWARD_SCALE = 
 LEARNING_RATE = 3e-4
 GAMMA = 0.99
 TAU = 0.005
@@ -65,7 +66,7 @@ class HER_SAC_Agent:
                 if np.random.random() < epsilon:
                     action = self.env.action_space.sample()
                 else:
-                    action, _ = self.actor.forward(state)
+                    action, _ = self.actor.forward(state, noisy=False)
                     #action = action[0]                             ?
             else:
                 print("ERROR: Wrong criterion for choosing the action")
@@ -74,6 +75,62 @@ class HER_SAC_Agent:
             state = new_state
             print("\tStep: ", step, "Reward = ", reward)
         return experiences
+
+    def optimization(self, minibatch):
+        """
+        Update networks in order to learn the correct policy
+
+        Parameters
+        ----------
+        minibatch: sample from the her buffer for the optimization
+
+        Returns
+        -------
+        
+        """
+        # 1° step: unzip minibatch sampled from HER
+        states, exp_actions, new_states, rewards, dones = [], [], [], [], []
+        for exp in minibatch:
+            states.append(exp.state_goal)
+            exp_actions.append(exp.action)
+            new_states.append(exp.newState_goal)
+            rewards.append(exp.reward)
+            dones.append(exp.done)
+
+        # 2° step: optimize value network
+        actions, log_probs = self.actor.forward(states, noisy=False)
+        q1 = self.critic_1.forward(states, actions)
+        q2 = self.critic_2.forward(states, actions)
+        q = tf.minimum(q1, q2)
+        v = self.value.forward(states)
+        value_loss = 0.5 * tf.reduce_mean((v - (q-log_probs))**2)       # correct ?
+        variables = self.value.get_weights()                            # is this equal to calculate all trainable params of the layers?
+        self.value.optimizer.minimize(value_loss, variables)
+
+        # 3° step: optimize critic networks
+        v_tgt = self.value.forward(new_states)
+        q_tgt = REWARD_SCALE*rewards + GAMMA*v_tgt
+        q1 = self.critic_1.forward(states, exp_actions)
+        q2 = self.critic_2.forward(states, exp_actions)
+        critic_1_loss = 0.5 * tf.reduce_mean((q1 - q_tgt)**2)
+        critic_2_loss = 0.5 * tf.reduce_mean((q2 - q_tgt)**2)
+        variables_c1 = self.critic_1.get_weights()
+        variables_c2 = self.critic_2.get_weights()
+        self.critic_1.optimizer.minimize(critic_1_loss, variables_c1)
+        self.critic_2.optimizer.minimize(critic_2_loss, variables_c2)
+
+        # 4* step: optimize actor network
+        actions, log_probs = self.actor.forward(states, noisy=True)
+        q1 = self.critic_1.forward(states, actions)
+        q2 = self.critic_2.forward(states, actions)
+        q = tf.minimum(q1, q2)
+        actor_loss = tf.reduce_mean(log_probs - q)
+        variables = self.actor.get_weights()
+        self.actor.optimizer.minimize(actor_loss, variables)
+
+        # TO DO: 5° step - update target network with tau parameter
+
+        return value_loss, critic_1_loss, critic_2_loss, actor_loss
 
     def random_play(self, batch_size):
         """
