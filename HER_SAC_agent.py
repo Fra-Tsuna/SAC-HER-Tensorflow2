@@ -6,8 +6,6 @@ import tensorflow as tf
 from tensorflow.keras.optimizers import Adam
 import numpy as np
 from models import ActorNetwork, CriticNetwork, ValueNetwork
-from tensorboardX import SummaryWriter
-
 
 # Learning parameters
 REWARD_SCALE = 5
