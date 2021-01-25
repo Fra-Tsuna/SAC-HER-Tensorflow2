@@ -79,7 +79,7 @@ if __name__ == '__main__':
                     agent.env.compute_reward(exp.state_goal['achieved_goal'], goal, None)
                 agent.getBuffer().store_experience(exp, reward, goal)
 
-        ## TO DO: Minibatch sample and optimization ...
+        ## Minibatch sample and optimization
         experiences = agent.getBuffer().sample(minibatch)
         v_loss, c1_loss, c2_loss, act_loss = \
             agent.optimization(experiences)
