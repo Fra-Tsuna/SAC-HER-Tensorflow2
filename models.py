@@ -22,7 +22,7 @@ NOISE = 1e-6
 class ActorNetwork(Model):
 
     def __init__(self, input_dim, action_dim):
-        super.__init__()
+        super(ActorNetwork, self).__init__()
 
         self.net = Sequential()
         #self.net.add(layers.Input(*self.input_dim,))           ?
@@ -46,22 +46,22 @@ class ActorNetwork(Model):
 
         # action selection
         if noisy:
-            actions_tensor = noise + policy.sample()
+            action_sample = noise + policy.sample()
         else
-            actions_tensor = policy.sample()
+            action_sample = policy.sample()
         action = tf.tanh(actions_tensor)
         log_probs = policy.log_prob(actions_tensor)
 
-        # enforcing action bounds (SAC paper appendix C)
-        log_likelihood = log_probs -
+        # enforcing action bounds
+        log_probs -= \
             tf.reduce_sum(tf.math.log(1 - action**2 + NOISE), axis=1, keepdims=True)
 
-        return action, log_likelihood
+        return action, log_probs
 
 class CriticNetwork(Model):
 
     def __init__(self, input_dim):
-        super.__init__()
+        super(CriticNetwork, self).__init__()
 
         self.net = Sequential()
         self.net.add(Input(shape=input_dim))
@@ -80,7 +80,7 @@ class CriticNetwork(Model):
 class ValueNetwork(Model):
 
     def __init__(self, input_dim):
-        super.__init__()
+        super(ValueNetwork, self).__init__()
 
         self.net = Sequential()
         self.net.add(Input(shape=input_dim))
