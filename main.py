@@ -29,7 +29,7 @@ ENV_NAME = "FetchPush-v1"
 TRAINING_EPOCHES = 1000
 BATCH_SIZE = 50
 RANDOM_EPISODES = 1000
-HER_CAPACITY = 10000
+HER_CAPACITY = 100000
 
 # learning parameters
 EPSILON_START = 1.0
@@ -80,13 +80,15 @@ if __name__ == '__main__':
                 agent.getBuffer().store_experience(exp, reward, goal)
 
         ## TO DO: Minibatch sample and optimization ...
-        ## [ the agent will have a function to sample and optimize ]
+        experiences = agent.getBuffer().sample(minibatch)
+        v_loss, c1_loss, c2_loss, act_loss = \
+            agent.optimization(experiences)
 
         ## print results
         m_reward_500 = np.mean(reward_vect[-500:])
-        m_loss_50 = np.mean(loss_vect[-50])
+        #m_loss_50 = np.mean(loss_vect[-50])
         print("Mean Reward [-500:] = ", m_reward_500)
-        print("Mean loss [-50:] = ", np.mean(loss_vect[-50]))
+        #print("Mean loss [-50:] = ", np.mean(loss_vect[-50]))
         writer.add_scalar("epsilon", epsilon, iterations)
         writer.add_scalar("mean_reward_500", m_reward_500, iterations)
-        writer.add_scalar("mean_loss_50", m_loss_50, iterations)
+        #writer.add_scalar("mean_loss_50", m_loss_50, iterations)
