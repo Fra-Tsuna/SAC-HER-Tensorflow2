@@ -6,14 +6,11 @@ import tensorflow as tf
 from tensorflow.keras.optimizers import Adam
 import numpy as np
 from models import ActorNetwork, CriticNetwork, ValueNetwork
+from tensorboardX import SummaryWriter
 
 
 # Learning parameters
-EPSILON_START = 1.0
-EPSILON_FINAL = 0.01
-EPSILON_DECAY_LAST_ITER = 1000000
 LEARNING_RATE = 3e-4
-
 GAMMA = 0.99
 TAU = 0.005
 
@@ -77,29 +74,6 @@ class HER_SAC_Agent:
             state = new_state
             print("\tStep: ", step, "Reward = ", reward)
         return experiences
-
-    def train(self, batch_size):
-        """
-        Train the agent with a batch_size number of episodes
-        """
-        epsilon = EPSILON_START
-        iterations = 0
-        for episode in range(batch_size):
-            epsilon = max(EPSILON_FINAL, EPSILON_START -
-                          iterations / EPSILON_DECAY_LAST_ITER)
-            experiences = self.play_episode(criterion="SAC", epsilon)
-            iterations += len(experiences)
-            goal = experiences[-1].state_goal['desired_goal']
-            achieved_goal = experiences[-1].state_goal['achieved_goal']
-            reward = self.env.compute_reward(achieved_goal, goal, None)
-            self.her_buffer.store_experience(experiences[-1], reward, goal)
-            goal = achieved_goal
-            for exp in experiences:
-                reward = \
-                    self.env.compute_reward(exp.state_goal['achieved_goal'], goal, None)
-                self.her_buffer.store_experience(exp, reward, goal)
-        
-        # TO DO: Minibatch and optimization [...]
 
     def random_play(self, batch_size):
         """
