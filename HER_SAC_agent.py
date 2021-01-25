@@ -23,15 +23,16 @@ class HER_SAC_Agent:
         self.her_buffer = her_buffer
         self.env.reset()
         self.actor = \
-            ActorNetwork(env.observation_space.shape, env.action_space.shape[0])
+            ActorNetwork(env.observation_space['observation'].shape, 
+                         env.action_space.shape[0])
         self.critic_1 = \
-            CriticNetwork(env.observation_space.shape)
+            CriticNetwork(env.observation_space['observation'].shape)
         self.critic_2 = \
-            CriticNetwork(env.observation_space.shape)
+            CriticNetwork(env.observation_space['observation'].shape)
         self.value = \
-            ValueNetwork(env.observation_space.shape)
+            ValueNetwork(env.observation_space['observation'].shape)
         self.target_value = \
-            ValueNetwork(env.observation_space.shape)
+            ValueNetwork(env.observation_space['observation'].shape)
         if optimizer == 'Adam':
             self.optimizer = Adam(learning_rate=LEARNING_RATE)
         else:
