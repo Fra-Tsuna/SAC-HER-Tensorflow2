@@ -79,11 +79,9 @@ class HER_SAC_Agent:
     def optimization(self, minibatch):
         """
         Update networks in order to learn the correct policy
-
         Parameters
         ----------
         minibatch: sample from the her buffer for the optimization
-
         Returns
         -------
         
@@ -119,7 +117,7 @@ class HER_SAC_Agent:
         self.critic_1.optimizer.minimize(critic_1_loss, variables_c1)
         self.critic_2.optimizer.minimize(critic_2_loss, variables_c2)
 
-        # 4* step: optimize actor network
+        # 4° step: optimize actor network
         actions, log_probs = self.actor.forward(states, noisy=True)
         q1 = self.critic_1.forward(states, actions)
         q2 = self.critic_2.forward(states, actions)
@@ -128,7 +126,12 @@ class HER_SAC_Agent:
         variables = self.actor.get_weights()
         self.actor.optimizer.minimize(actor_loss, variables)
 
-        # TO DO: 5° step - update target network with tau parameter
+        # 5° step - update target network
+        target_value_weights = self.target_value.get_weights()
+        value_weights = self.value.get_weights()
+        value_weights = TAU*value_weights + (1-TAU)*target_value_weights
+        for weight in value_weights:
+            self.target_value.set_weights(weight)
 
         return value_loss, critic_1_loss, critic_2_loss, actor_loss
 
