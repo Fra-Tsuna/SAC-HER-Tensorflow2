@@ -15,7 +15,7 @@ import numpy as np
 import time
 
 # Personal libraries
-from HER import HER_Buffer
+from HER import HER_Buffer, Experience
 from HER_SAC_agent import HER_SAC_Agent
 
 
@@ -25,10 +25,16 @@ from HER_SAC_agent import HER_SAC_Agent
 # environment parameters
 ENV_NAME = "FetchPush-v1"
 
-# learning parameters
-TRAINING_BATCH = 50000
+# training parameters
+TRAINING_EPOCHES = 1000
+BATCH_SIZE = 50
 RANDOM_EPISODES = 1000
-HER_CAPACITY = 1000
+HER_CAPACITY = 10000
+
+# learning parameters
+EPSILON_START = 1.0
+EPSILON_FINAL = 0.01
+EPSILON_DECAY_LAST_ITER = 1000000
 
 # _____________________________________________________ Main _____________________________________________________ #
 
@@ -44,12 +50,43 @@ if __name__ == '__main__':
     her_buff = HER_Buffer(HER_CAPACITY)
     agent = HER_SAC_Agent(env, her_buff)
 
-    # Training 
-            
+    # Summary writer for live trends
+    writer = SummaryWriter(log_dir="/graphics", comment="LR"+LEARNING_RATE)
 
-    # Random playing (useful for testing)
-    #success = agent.random_play(RANDOM_BATCH)
-    #if success:
-    #    print("Goal achieved! Good job!")
-    #else:
-    #    print("Bad play...")
+    # Pre-training initialization
+    iterations = 0
+    loss_vect = []
+    reward_vect = []
+    epsilon = EPSILON_START
+
+    # Training 
+    for epoch in range(TRAINING_EPOCHES):
+
+        ## play batch
+        for episode in range(BATCH_SIZE):
+            epsilon = max(EPSILON_FINAL, EPSILON_START -
+                          iterations / EPSILON_DECAY_LAST_ITER)
+            experiences = agent.play_episode(criterion="SAC", epsilon)
+            reward_vect.append(exp.reward for exp in experiences)
+            iterations += len(experiences)
+            goal = experiences[-1].state_goal['desired_goal']
+            achieved_goal = experiences[-1].state_goal['achieved_goal']
+            reward = agent.env.compute_reward(achieved_goal, goal, None)
+            agent.getBuffer().store_experience(experiences[-1], reward, goal)
+            goal = achieved_goal
+            for exp in experiences:
+                reward = \
+                    agent.env.compute_reward(exp.state_goal['achieved_goal'], goal, None)
+                agent.getBuffer().store_experience(exp, reward, goal)
+
+        ## TO DO: Minibatch sample and optimization ...
+        ## [ the agent will have a function to sample and optimize ]
+
+        ## print results
+        m_reward_500 = np.mean(reward_vect[-500:])
+        m_loss_50 = np.mean(loss_vect[-50])
+        print("Mean Reward [-500:] = ", m_reward_500)
+        print("Mean loss [-50:] = ", np.mean(loss_vect[-50]))
+        writer.add_scalar("epsilon", epsilon, iterations)
+        writer.add_scalar("mean_reward_500", m_reward_500, iterations)
+        writer.add_scalar("mean_loss_50", m_loss_50, iterations)
