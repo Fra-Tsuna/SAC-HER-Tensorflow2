@@ -86,8 +86,8 @@ class ValueNetwork(Model):
         self.net.add(layers.Dense(VALUE_DENSE_1))
         self.net.add(layers.ReLU())
         self.net.add(layers.Dense(VALUE_DENSE_2))
-        self.net.add(layers.ReLU)
-        self.net.add(Dense(1))
+        self.net.add(layers.ReLU())
+        self.net.add(layers.Dense(1))
     
     def forward(self, state):
         value = self.net(state)
