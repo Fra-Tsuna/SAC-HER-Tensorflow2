@@ -25,9 +25,9 @@ class ActorNetwork(Model):
         super(ActorNetwork, self).__init__()
 
         self.net = Sequential()
-        #self.net.add(layers.Input(*self.input_dim,))           ?
-        self.net.add(layers.Input(shape=input_dim))
-        self.net.add(layers.Dense((ACTOR_DENSE_1))
+        self.net.add(layers.Input(*input_dim,))           
+        #self.net.add(layers.Input(shape=input_dim))
+        self.net.add(layers.Dense((ACTOR_DENSE_1)))
         self.net.add(layers.ReLU())
         self.net.add(layers.Dense(ACTOR_DENSE_2))
         self.net.add(layers.ReLU())
@@ -47,7 +47,7 @@ class ActorNetwork(Model):
         # action selection
         if noisy:
             action_sample = noise + policy.sample()
-        else
+        else:
             action_sample = policy.sample()
         action = tf.tanh(actions_tensor)
         log_probs = policy.log_prob(actions_tensor)
