@@ -25,8 +25,7 @@ class ActorNetwork(Model):
         super(ActorNetwork, self).__init__()
 
         self.net = Sequential()
-        self.net.add(layers.Input(shape=*input_dim,))           
-        #self.net.add(layers.Input(shape=input_dim))
+        self.net.add(layers.Input(shape=input_dim))
         self.net.add(layers.Dense((ACTOR_DENSE_1)))
         self.net.add(layers.ReLU())
         self.net.add(layers.Dense(ACTOR_DENSE_2))
