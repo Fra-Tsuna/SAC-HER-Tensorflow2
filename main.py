@@ -43,7 +43,7 @@ if __name__ == '__main__':
 
     # Environment initialization
     env = gym.make(ENV_NAME)
-    obs_space = env.observation_space.shape
+    obs_space = env.observation_space['observation'].shape
     actions_dim = env.action_space.shape[0]
 
     # Agent initialization
