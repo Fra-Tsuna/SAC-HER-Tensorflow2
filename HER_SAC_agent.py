@@ -117,35 +117,45 @@ class HER_SAC_Agent:
         new_states = np.array(new_states, ndmin=2)
 
         # 2° step: optimize value network
-        actions, log_probs = self.actor(states, noisy=False)
-        q1 = self.critic_1(states, actions)
-        q2 = self.critic_2(states, actions)
-        q = tf.minimum(q1, q2)
-        v = self.value(states)
-        value_loss = 0.5 * tf.reduce_mean((v - (q-log_probs))**2)       # correct ?
-        variables = self.value.get_weights()                            # is this equal to calculate all trainable params of the layers?
-        self.value_optimizer.minimize(value_loss, variables)
+        with tf.GradientTape() as value_tape:
+            actions, log_probs = self.actor(states, noisy=False)
+            q1 = self.critic_1(states, actions)
+            q2 = self.critic_2(states, actions)
+            q = tf.minimum(q1, q2)
+            v = self.value(states)
+            value_loss = 0.5 * tf.reduce_mean((v - (q-log_probs))**2)       # correct ?
+        variables = self.value.trainable_variables
+        value_grads = value_tape.gradient(value_loss, variables)
+        self.value_optimizer.apply_gradients(zip(value_grads, variables))
 
         # 3° step: optimize critic networks
-        v_tgt = self.value(new_states)
-        q_tgt = REWARD_SCALE*rewards + GAMMA*v_tgt
-        q1 = self.critic_1(states, exp_actions)
-        q2 = self.critic_2(states, exp_actions)
-        critic_1_loss = 0.5 * tf.reduce_mean((q1 - q_tgt)**2)
-        critic_2_loss = 0.5 * tf.reduce_mean((q2 - q_tgt)**2)
-        variables_c1 = self.critic_1.get_weights()
-        variables_c2 = self.critic_2.get_weights()
-        self.critic1_optimizer.minimize(critic_1_loss, variables_c1)
-        self.critic2_optimizer.minimize(critic_2_loss, variables_c2)
+        with tf.GradientTape() as critic1_tape:
+            v_tgt = self.value(new_states)
+            q_tgt = REWARD_SCALE*rewards + GAMMA*v_tgt
+            q1 = self.critic_1(states, exp_actions)
+            critic1_loss = 0.5 * tf.reduce_mean((q1 - q_tgt)**2)
+        with tf.GradientTape() as critic2_tape:
+            v_tgt = self.value(new_states)
+            q_tgt = REWARD_SCALE*rewards + GAMMA*v_tgt
+            q2 = self.critic_2(states, exp_actions)
+            critic2_loss = 0.5 * tf.reduce_mean((q2 - q_tgt)**2)
+        variables_c1 = self.critic_1.trainable_variables
+        variables_c2 = self.critic_2.trainable_variables
+        critic1_grads = critic1_tape.gradient(critic1_loss, variables_c1)
+        critic2_grads = critic2_tape.gradient(critic2_loss, variables_c2)
+        self.critic1_optimizer.apply_gradients(zip(critic1_grads, variables_c1))
+        self.critic2_optimizer.apply_gradients(zip(critic2_grads, variables_c2))
 
         # 4° step: optimize actor network
-        actions, log_probs = self.actor(states, noisy=True)
-        q1 = self.critic_1(states, actions)
-        q2 = self.critic_2(states, actions)
-        q = tf.minimum(q1, q2)
-        actor_loss = tf.reduce_mean(log_probs - q)
-        variables = self.actor.get_weights()
-        self.actor_optimizer.minimize(actor_loss, variables)
+        with tf.GradientTape() as actor_tape:
+            actions, log_probs = self.actor(states, noisy=True)
+            q1 = self.critic_1(states, actions)
+            q2 = self.critic_2(states, actions)
+            q = tf.minimum(q1, q2)
+            actor_loss = tf.reduce_mean(log_probs - q)
+        variables = self.actor.trainable_variables
+        actor_grads = actor_tape.gradient(actor_loss, variables)
+        self.actor_optimizer.apply_gradients(zip(actor_grads, variables))
 
         # 5° step - update target network
         target_value_weights = self.target_value.get_weights()
