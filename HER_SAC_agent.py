@@ -18,23 +18,40 @@ TAU = 0.005
 class HER_SAC_Agent:
 
     def __init__(self, env, her_buffer, optimizer='Adam'):
+
+        # env
         self.env = env
         self.her_buffer = her_buffer
         self.env.reset()
-        self.state_shape = \
+
+        # input shape
+        self.normal_state_shape = \
             ((env.observation_space['observation'].shape[0] +
               env.observation_space['desired_goal'].shape[0]),)
-        print(self.state_shape)
-        self.actor = ActorNetwork(self.state_shape, env.action_space.shape[0])
-        self.critic_1 = CriticNetwork(self.state_shape)
-        self.critic_2 = CriticNetwork(self.state_shape)
-        self.value = ValueNetwork(self.state_shape)
-        self.target_value = ValueNetwork(self.state_shape)
+        self.critic_state_shape = \
+            ((env.observation_space['observation'].shape[0] +
+              env.observation_space['desired_goal'].shape[0] +
+              env.action_space.shape[0]),)
+
+        # networks
+        self.actor = ActorNetwork(self.normal_state_shape, env.action_space.shape[0])
+        self.critic_1 = CriticNetwork(self.critic_state_shape)
+        self.critic_2 = CriticNetwork(self.critic_state_shape)
+        self.value = ValueNetwork(self.normal_state_shape)
+        self.target_value = ValueNetwork(self.normal_state_shape)
+
+        # optimizers
         if optimizer == 'Adam':
-            self.optimizer = Adam(learning_rate=LEARNING_RATE)
+            self.actor_optimizer = Adam(LEARNING_RATE)
+            self.critic1_optimizer = Adam(LEARNING_RATE)
+            self.critic2_optimizer = Adam(LEARNING_RATE)
+            self.value_optimizer = Adam(LEARNING_RATE)
         else:
-            self.optimizer = None
-            print("Error: Wrong optimizer for the agent")
+            self.actor_optimizer = None
+            self.critic1_optimizer = None
+            self.critic2_optimizer = None
+            self.value_optimizer = None
+            print("Error: wrong or not supported optimizer")
 
     def getBuffer(self):
         return self.her_buffer
@@ -96,6 +113,8 @@ class HER_SAC_Agent:
             new_states.append(exp.new_state)
             rewards.append(exp.reward)
             dones.append(exp.done)
+        states = np.array(states, ndmin=2)
+        new_states = np.array(new_states, ndmin=2)
 
         # 2° step: optimize value network
         actions, log_probs = self.actor(states, noisy=False)
@@ -105,7 +124,7 @@ class HER_SAC_Agent:
         v = self.value(states)
         value_loss = 0.5 * tf.reduce_mean((v - (q-log_probs))**2)       # correct ?
         variables = self.value.get_weights()                            # is this equal to calculate all trainable params of the layers?
-        self.value.optimizer.minimize(value_loss, variables)
+        self.value_optimizer.minimize(value_loss, variables)
 
         # 3° step: optimize critic networks
         v_tgt = self.value(new_states)
@@ -116,8 +135,8 @@ class HER_SAC_Agent:
         critic_2_loss = 0.5 * tf.reduce_mean((q2 - q_tgt)**2)
         variables_c1 = self.critic_1.get_weights()
         variables_c2 = self.critic_2.get_weights()
-        self.critic_1.optimizer.minimize(critic_1_loss, variables_c1)
-        self.critic_2.optimizer.minimize(critic_2_loss, variables_c2)
+        self.critic1_optimizer.minimize(critic_1_loss, variables_c1)
+        self.critic2_optimizer.minimize(critic_2_loss, variables_c2)
 
         # 4° step: optimize actor network
         actions, log_probs = self.actor(states, noisy=True)
@@ -126,13 +145,13 @@ class HER_SAC_Agent:
         q = tf.minimum(q1, q2)
         actor_loss = tf.reduce_mean(log_probs - q)
         variables = self.actor.get_weights()
-        self.actor.optimizer.minimize(actor_loss, variables)
+        self.actor_optimizer.minimize(actor_loss, variables)
 
         # 5° step - update target network
         target_value_weights = self.target_value.get_weights()
         value_weights = self.value.get_weights()
         value_weights = TAU*value_weights + (1-TAU)*target_value_weights
-        for weight in value_weights:
+        for weight in value_weights:                                            # ??????
             self.target_value.set_weights(weight)
 
         return value_loss, critic_1_loss, critic_2_loss, actor_loss
