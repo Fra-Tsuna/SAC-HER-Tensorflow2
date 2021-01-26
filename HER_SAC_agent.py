@@ -158,13 +158,15 @@ class HER_SAC_Agent:
         self.actor_optimizer.apply_gradients(zip(actor_grads, variables))
 
         # 5° step - update target network
-        target_value_weights = self.target_value.get_weights()
-        value_weights = self.value.get_weights()
-        value_weights = TAU*value_weights + (1-TAU)*target_value_weights
-        for weight in value_weights:                                            # ??????
-            self.target_value.set_weights(weight)
+        dummy_build = self.target_value(states)
+        target_value_variables = self.target_value.trainable_variables
+        value_variables = self.value.trainable_variables
+        for var in range(len(value_variables)):
+            value_variables[var] = \
+                TAU*value_variables[var] + (1-TAU)*target_value_variables[var]
+        self.target_value.net.set_weights(value_variables)
 
-        return value_loss, critic_1_loss, critic_2_loss, actor_loss
+        return value_loss, critic1_loss, critic2_loss, actor_loss
 
     def random_play(self, batch_size):
         """
