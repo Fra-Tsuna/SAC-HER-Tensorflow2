@@ -28,16 +28,18 @@ ENV_NAME = "FetchPush-v1"
 LOG_DIR = "/home/gianfranco/Desktop/FetchLog"
 
 # training parameters
-TRAINING_EPOCHES = 1000
+TRAINING_EPOCHES = 200
 BATCH_SIZE = 50
-MINIBATCH_SIZE = 256
+OPTIMIZATION_STEPS = 40
+POLICY_STEPS = 16
+MINIBATCH_SAMPLE_SIZE = 128
 RANDOM_EPISODES = 1000
-HER_CAPACITY = 100000
+HER_CAPACITY = 1000000
 
 # learning parameters
-EPSILON_START = 1
+EPSILON_START = 0.5
 EPSILON_FINAL = 0.01
-EPSILON_DECAY_LAST_ITER = 1000000
+EPSILON_DECAY_LAST_ITER = 100000
 LEARNING_RATE = 3e-4
 
 # _____________________________________________________ Main _____________________________________________________ #
@@ -67,27 +69,33 @@ if __name__ == '__main__':
 
         ## play batch
         for episode in range(BATCH_SIZE):
-            print("Episode ", episode)
-            epsilon = max(EPSILON_FINAL, EPSILON_START -
-                          iterations / EPSILON_DECAY_LAST_ITER)
-            experiences = agent.play_episode(criterion="SAC", epsilon=epsilon)
-            for exp in experiences:
-                reward_vect.append(exp.reward)
-            iterations += len(experiences)
-            goal = experiences[-1].state['desired_goal']
-            achieved_goal = experiences[-1].state['achieved_goal']
-            reward = agent.env.compute_reward(achieved_goal, goal, None)
-            agent.getBuffer().store_experience(experiences[-1], reward, goal)
-            goal = achieved_goal
-            for exp in experiences:
-                reward = \
-                    agent.env.compute_reward(exp.state['achieved_goal'], goal, None)
-                agent.getBuffer().store_experience(exp, reward, goal)
 
-        ## Minibatch sample and optimization 
-        experiences = agent.getBuffer().sample(MINIBATCH_SIZE)
-        v_loss, c1_loss, c2_loss, act_loss = \
-            agent.optimization(experiences)
+            ### play episode
+            for policy_step in range(POLICY_STEPS):
+                print("Epoch ", epoch, "- Episode ", episode)
+                print("\t____Policy step ", policy_step, "____")
+                epsilon = max(EPSILON_FINAL, EPSILON_START -
+                            iterations / EPSILON_DECAY_LAST_ITER)
+                experiences = agent.play_episode(criterion="SAC", epsilon=epsilon)
+                for exp in experiences:
+                    reward_vect.append(exp.reward)
+                iterations += len(experiences)
+                goal = experiences[-1].state['desired_goal']
+                achieved_goal = experiences[-1].state['achieved_goal']
+                reward = agent.env.compute_reward(achieved_goal, goal, None)
+                agent.getBuffer().store_experience(experiences[-1], reward, goal)
+                goal = achieved_goal
+                for exp in experiences:
+                    reward = \
+                        agent.env.compute_reward(exp.state['achieved_goal'], goal, None)
+                    agent.getBuffer().store_experience(exp, reward, goal)
+
+            ### optimization
+            for opt_step in range(OPTIMIZATION_STEPS):
+                print("__Optimization step ", opt_step, "__")
+                experiences = agent.getBuffer().sample(MINIBATCH_SAMPLE_SIZE)
+                v_loss, c1_loss, c2_loss, act_loss = \
+                    agent.optimization(experiences)
 
         ## print results
         m_reward_1000 = np.mean(reward_vect[-1000:])
