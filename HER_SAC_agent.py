@@ -7,6 +7,7 @@ from tensorflow.keras.optimizers import Adam
 import numpy as np
 from models import ActorNetwork, CriticNetwork, ValueNetwork
 
+
 # Learning parameters
 REWARD_SCALE = 5
 LEARNING_RATE = 3e-4
@@ -20,17 +21,15 @@ class HER_SAC_Agent:
         self.env = env
         self.her_buffer = her_buffer
         self.env.reset()
-        self.actor = \
-            ActorNetwork(env.observation_space['observation'].shape, 
-                         env.action_space.shape[0])
-        self.critic_1 = \
-            CriticNetwork(env.observation_space['observation'].shape)
-        self.critic_2 = \
-            CriticNetwork(env.observation_space['observation'].shape)
-        self.value = \
-            ValueNetwork(env.observation_space['observation'].shape)
-        self.target_value = \
-            ValueNetwork(env.observation_space['observation'].shape)
+        self.state_shape = \
+            ((env.observation_space['observation'].shape[0] +
+              env.observation_space['desired_goal'].shape[0]),)
+        print(self.state_shape)
+        self.actor = ActorNetwork(self.state_shape, env.action_space.shape[0])
+        self.critic_1 = CriticNetwork(self.state_shape)
+        self.critic_2 = CriticNetwork(self.state_shape)
+        self.value = ValueNetwork(self.state_shape)
+        self.target_value = ValueNetwork(self.state_shape)
         if optimizer == 'Adam':
             self.optimizer = Adam(learning_rate=LEARNING_RATE)
         else:
@@ -48,6 +47,7 @@ class HER_SAC_Agent:
         ----------
         criterion: strategy to choose actions ('random' or 'SAC')
         epsilon: random factor for epsilon-greedy strategy
+
         Returns
         -------
         experiences: all experiences taken by the agent in the episode 
@@ -65,8 +65,11 @@ class HER_SAC_Agent:
                 if np.random.random() < epsilon:
                     action = self.env.action_space.sample()
                 else:
-                    action, _ = self.actor.forward(state, noisy=False)
-                    #action = action[0]                             ?
+                    state_goal = \
+                        np.concatenate([state['observation'], state['desired_goal']])
+                    state_goal = np.array(state_goal, ndmin=2)
+                    action, _ = self.actor(state_goal, noisy=False)
+                    action = action.numpy()[0]
             else:
                 print("ERROR: Wrong criterion for choosing the action")
             new_state, reward, done, _ = self.env.step(action)
@@ -88,27 +91,27 @@ class HER_SAC_Agent:
         # 1° step: unzip minibatch sampled from HER
         states, exp_actions, new_states, rewards, dones = [], [], [], [], []
         for exp in minibatch:
-            states.append(exp.state_goal)
+            states.append(exp.state)
             exp_actions.append(exp.action)
-            new_states.append(exp.newState_goal)
+            new_states.append(exp.new_state)
             rewards.append(exp.reward)
             dones.append(exp.done)
 
         # 2° step: optimize value network
-        actions, log_probs = self.actor.forward(states, noisy=False)
-        q1 = self.critic_1.forward(states, actions)
-        q2 = self.critic_2.forward(states, actions)
+        actions, log_probs = self.actor(states, noisy=False)
+        q1 = self.critic_1(states, actions)
+        q2 = self.critic_2(states, actions)
         q = tf.minimum(q1, q2)
-        v = self.value.forward(states)
+        v = self.value(states)
         value_loss = 0.5 * tf.reduce_mean((v - (q-log_probs))**2)       # correct ?
         variables = self.value.get_weights()                            # is this equal to calculate all trainable params of the layers?
         self.value.optimizer.minimize(value_loss, variables)
 
         # 3° step: optimize critic networks
-        v_tgt = self.value.forward(new_states)
+        v_tgt = self.value(new_states)
         q_tgt = REWARD_SCALE*rewards + GAMMA*v_tgt
-        q1 = self.critic_1.forward(states, exp_actions)
-        q2 = self.critic_2.forward(states, exp_actions)
+        q1 = self.critic_1(states, exp_actions)
+        q2 = self.critic_2(states, exp_actions)
         critic_1_loss = 0.5 * tf.reduce_mean((q1 - q_tgt)**2)
         critic_2_loss = 0.5 * tf.reduce_mean((q2 - q_tgt)**2)
         variables_c1 = self.critic_1.get_weights()
@@ -117,9 +120,9 @@ class HER_SAC_Agent:
         self.critic_2.optimizer.minimize(critic_2_loss, variables_c2)
 
         # 4° step: optimize actor network
-        actions, log_probs = self.actor.forward(states, noisy=True)
-        q1 = self.critic_1.forward(states, actions)
-        q2 = self.critic_2.forward(states, actions)
+        actions, log_probs = self.actor(states, noisy=True)
+        q1 = self.critic_1(states, actions)
+        q2 = self.critic_2(states, actions)
         q = tf.minimum(q1, q2)
         actor_loss = tf.reduce_mean(log_probs - q)
         variables = self.actor.get_weights()
