@@ -25,6 +25,7 @@ class ActorNetwork(Model):
     def __init__(self, input_dim, action_dim):
         super(ActorNetwork, self).__init__()
 
+        self.input_layer = layers.InputLayer(input_shape=input_dim)
         self.layer_1 = layers.Dense(ACTOR_DENSE_1, activation=layers.ReLU())
         self.layer_2 = layers.Dense(ACTOR_DENSE_2, activation=layers.ReLU())
         self.mean = layers.Dense(action_dim)
@@ -33,7 +34,7 @@ class ActorNetwork(Model):
     def call(self, state, noisy=True):
 
         # policy parameters 
-        out_linear = self.layer_2(self.layer_1(state))
+        out_linear = self.layer_2(self.layer_1(self.input_layer(state)))
         mi = self.mean(out_linear)
         sigma = tf.clip_by_value(self.std_dev(out_linear), NOISE, 1)
         policy = tfp.distributions.Normal(mi, sigma)
