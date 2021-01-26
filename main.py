@@ -29,13 +29,13 @@ LOG_DIR = "/home/gianfranco/Desktop/FetchLog"
 
 # training parameters
 TRAINING_EPOCHES = 1000
-BATCH_SIZE = 10             # AFTER DEBUGGING SET TO 50
+BATCH_SIZE = 50
 MINIBATCH_SIZE = 256
 RANDOM_EPISODES = 1000
 HER_CAPACITY = 100000
 
 # learning parameters
-EPSILON_START = 0.5         # AFTER DEBUGGING SET TO 0.9 OR 1
+EPSILON_START = 1
 EPSILON_FINAL = 0.01
 EPSILON_DECAY_LAST_ITER = 1000000
 LEARNING_RATE = 3e-4
@@ -71,7 +71,8 @@ if __name__ == '__main__':
             epsilon = max(EPSILON_FINAL, EPSILON_START -
                           iterations / EPSILON_DECAY_LAST_ITER)
             experiences = agent.play_episode(criterion="SAC", epsilon=epsilon)
-            reward_vect.append(exp.reward for exp in experiences)
+            for exp in experiences:
+                reward_vect.append(exp.reward)
             iterations += len(experiences)
             goal = experiences[-1].state['desired_goal']
             achieved_goal = experiences[-1].state['achieved_goal']
@@ -89,10 +90,10 @@ if __name__ == '__main__':
             agent.optimization(experiences)
 
         ## print results
-        m_reward_500 = np.mean(reward_vect[-500:])
+        m_reward_1000 = np.mean(reward_vect[-1000:])
         #m_loss_50 = np.mean(loss_vect[-50])
-        print("Mean Reward [-500:] = ", m_reward_500)
+        print("Mean Reward [-500:] = ", m_reward_1000)
         #print("Mean loss [-50:] = ", np.mean(loss_vect[-50]))
         writer.add_scalar("epsilon", epsilon, iterations)
-        writer.add_scalar("mean_reward_500", m_reward_500, iterations)
+        writer.add_scalar("mean_reward_1000", m_reward_1000, iterations)
         #writer.add_scalar("mean_loss_50", m_loss_50, iterations)
