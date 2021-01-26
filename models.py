@@ -5,7 +5,8 @@ import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
 from tensorflow.keras import \
-    Model, Sequential, Input, layers
+    Model, Sequential, layers
+from tensorflow.keras.models import clone_model
 
 
 # Hyperparameters
@@ -24,22 +25,17 @@ class ActorNetwork(Model):
     def __init__(self, input_dim, action_dim):
         super(ActorNetwork, self).__init__()
 
-        self.net = Sequential()
-        self.net.add(layers.Input(shape=input_dim))
-        self.net.add(layers.Dense((ACTOR_DENSE_1)))
-        self.net.add(layers.ReLU())
-        self.net.add(layers.Dense(ACTOR_DENSE_2))
-        self.net.add(layers.ReLU())
+        self.layer_1 = layers.Dense(ACTOR_DENSE_1, activation=layers.ReLU())
+        self.layer_2 = layers.Dense(ACTOR_DENSE_2, activation=layers.ReLU())
+        self.mean = layers.Dense(action_dim)
+        self.std_dev = layers.Dense(action_dim)
 
-        self.mean = self.net.add(layers.Dense(action_dim))
-        self.std_dev = self.net.add(layers.Dense(action_dim))
-
-    def forward(self, state, noisy=True):
+    def call(self, state, noisy=True):
 
         # policy parameters 
-        mi = self.mean(state)
-        #sigma = np.clip(self.std_dev(state), NOISE, 1)         ?
-        sigma = tf.clip_by_value(self.std_dev(state), NOISE, 1)
+        out_linear = self.layer_2(self.layer_1(state))
+        mi = self.mean(out_linear)
+        sigma = tf.clip_by_value(self.std_dev(out_linear), NOISE, 1)
         policy = tfp.distributions.Normal(mi, sigma)
         noise = tfp.distributions.Normal(0,1).sample()
 
@@ -48,8 +44,8 @@ class ActorNetwork(Model):
             action_sample = noise + policy.sample()
         else:
             action_sample = policy.sample()
-        action = tf.tanh(actions_tensor)
-        log_probs = policy.log_prob(actions_tensor)
+        action = tf.tanh(action_sample)
+        log_probs = policy.log_prob(action_sample)
 
         # enforcing action bounds
         log_probs -= \
@@ -63,14 +59,14 @@ class CriticNetwork(Model):
         super(CriticNetwork, self).__init__()
 
         self.net = Sequential()
-        self.net.add(Input(shape=input_dim))
+        self.net.add(layers.InputLayer(input_shape=input_dim))
         self.net.add(layers.Dense(CRITIC_DENSE_1))
         self.net.add(layers.ReLU())
         self.net.add(layers.Dense(CRITIC_DENSE_2))
         self.net.add(layers.ReLU())
         self.net.add(layers.Dense(1))
 
-    def forward(self, state, action):
+    def call(self, state, action):
         state_action = tf.concat([state, action], axis=1)
         q_value = self.net(state_action)
         return q_value
@@ -82,13 +78,13 @@ class ValueNetwork(Model):
         super(ValueNetwork, self).__init__()
 
         self.net = Sequential()
-        self.net.add(Input(shape=input_dim))
+        self.net.add(layers.InputLayer(input_shape=input_dim))
         self.net.add(layers.Dense(VALUE_DENSE_1))
         self.net.add(layers.ReLU())
         self.net.add(layers.Dense(VALUE_DENSE_2))
         self.net.add(layers.ReLU())
         self.net.add(layers.Dense(1))
     
-    def forward(self, state):
+    def call(self, state):
         value = self.net(state)
         return value
