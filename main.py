@@ -100,6 +100,9 @@ if __name__ == '__main__':
                 v_loss, c1_loss, c2_loss, act_loss = \
                     agent.optimization(experiences)
 
+            ### target network updating
+            agent.update_target()
+
         ## success rate
         total_success = 0
         for rew in reward_vect:
