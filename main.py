@@ -37,10 +37,9 @@ RANDOM_EPISODES = 1000
 HER_CAPACITY = 1000000
 
 # learning parameters
-EPSILON_START = 0.5
+EPSILON_START = 0.3
 EPSILON_FINAL = 0.01
-EPSILON_DECAY_LAST_ITER = 100000
-LEARNING_RATE = 3e-4
+EPSILON_DECAY_LAST_ITER = 30000
 
 # _____________________________________________________ Main _____________________________________________________ #
 
@@ -55,7 +54,7 @@ if __name__ == '__main__':
     agent = HER_SAC_Agent(env, her_buff)
 
     # Summary writer for live trends
-    writer = SummaryWriter(log_dir=LOG_DIR, comment="LR"+ str(LEARNING_RATE))
+    writer = SummaryWriter(log_dir=LOG_DIR, comment="NoComment")
 
     # Pre-training initialization
     iterations = 0
@@ -77,18 +76,22 @@ if __name__ == '__main__':
                 epsilon = max(EPSILON_FINAL, EPSILON_START -
                             iterations / EPSILON_DECAY_LAST_ITER)
                 experiences = agent.play_episode(criterion="SAC", epsilon=epsilon)
-                for exp in experiences:
-                    reward_vect.append(exp.reward)
                 iterations += len(experiences)
                 goal = experiences[-1].state['desired_goal']
                 achieved_goal = experiences[-1].state['achieved_goal']
-                reward = agent.env.compute_reward(achieved_goal, goal, None)
-                agent.getBuffer().store_experience(experiences[-1], reward, goal)
-                goal = achieved_goal
+                true_reward = agent.env.compute_reward(achieved_goal, goal, None)
                 for exp in experiences:
-                    reward = \
-                        agent.env.compute_reward(exp.state['achieved_goal'], goal, None)
-                    agent.getBuffer().store_experience(exp, reward, goal)
+                    reward_vect.append(exp.reward)
+                    agent.getBuffer().store_experience(exp, true_reward, goal)
+                    her_reward = agent.env.compute_reward(exp.state['achieved_goal'], 
+                                                          achieved_goal, None)
+                    agent.getBuffer().store_experience(exp, her_reward, achieved_goal)
+                
+                #### print results
+                if iterations > 1000:
+                    m_reward_1000 = np.mean(reward_vect[-1000:])
+                    writer.add_scalar("epsilon", epsilon, iterations)
+                    writer.add_scalar("mean_reward_1000", m_reward_1000, iterations)
 
             ### optimization
             for opt_step in range(OPTIMIZATION_STEPS):
@@ -97,11 +100,10 @@ if __name__ == '__main__':
                 v_loss, c1_loss, c2_loss, act_loss = \
                     agent.optimization(experiences)
 
-        ## print results
-        m_reward_1000 = np.mean(reward_vect[-1000:])
-        #m_loss_50 = np.mean(loss_vect[-50])
-        print("Mean Reward [-500:] = ", m_reward_1000)
-        #print("Mean loss [-50:] = ", np.mean(loss_vect[-50]))
-        writer.add_scalar("epsilon", epsilon, iterations)
-        writer.add_scalar("mean_reward_1000", m_reward_1000, iterations)
-        #writer.add_scalar("mean_loss_50", m_loss_50, iterations)
+        ## success rate
+        total_success = 0
+        for rew in reward_vect:
+            total_success += 1 if rew > -1 else 0
+        success_rate = total_success/len(reward_vect)
+        writer.add_scalar("success rate per epoch", success_rate, epoch)
+        reward_vect = []
