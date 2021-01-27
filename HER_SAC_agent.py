@@ -106,12 +106,14 @@ class HER_SAC_Agent:
     def optimization(self, minibatch):
         """
         Update networks in order to learn the correct policy
+
         Parameters
         ----------
         minibatch: sample from the her buffer for the optimization
+
         Returns
         -------
-        
+        *_loss: loss of the correspondent network
         """
         # 1° step: unzip minibatch sampled from HER
         states, exp_actions, new_states, rewards, dones = [], [], [], [], []
@@ -131,7 +133,7 @@ class HER_SAC_Agent:
             q2 = self.critic_2(states, actions)
             q = tf.minimum(q1, q2)
             v = self.value(states)
-            value_loss = 0.5 * tf.reduce_mean((v - (q-log_probs))**2)       # correct ?
+            value_loss = 0.5 * tf.reduce_mean((v - (q-log_probs))**2)      
         variables = self.value.trainable_variables
         value_grads = value_tape.gradient(value_loss, variables)
         self.value_optimizer.apply_gradients(zip(value_grads, variables))
@@ -139,12 +141,12 @@ class HER_SAC_Agent:
         # 3° step: optimize critic networks
         with tf.GradientTape() as critic1_tape:
             v_tgt = self.value(new_states)
-            q_tgt = REWARD_SCALE*rewards + GAMMA*v_tgt
+            q_tgt = tf.stop_gradient(REWARD_SCALE*rewards + GAMMA*v_tgt)
             q1 = self.critic_1(states, exp_actions)
             critic1_loss = 0.5 * tf.reduce_mean((q1 - q_tgt)**2)
         with tf.GradientTape() as critic2_tape:
             v_tgt = self.value(new_states)
-            q_tgt = REWARD_SCALE*rewards + GAMMA*v_tgt
+            q_tgt = tf.stop_gradient(REWARD_SCALE*rewards + GAMMA*v_tgt)
             q2 = self.critic_2(states, exp_actions)
             critic2_loss = 0.5 * tf.reduce_mean((q2 - q_tgt)**2)
         variables_c1 = self.critic_1.trainable_variables
@@ -165,18 +167,15 @@ class HER_SAC_Agent:
         actor_grads = actor_tape.gradient(actor_loss, variables)
         self.actor_optimizer.apply_gradients(zip(actor_grads, variables))
 
-        return value_loss, critic1_loss, critic2_loss, actor_loss
-
-    def update_target(self):
-        """
-        Update target network 
-        """
+        #5° step: update target network
         target_value_variables = self.target_value.trainable_variables
         value_variables = self.value.trainable_variables
         for var in range(len(value_variables)):
             value_variables[var] = \
                 TAU*value_variables[var] + (1-TAU)*target_value_variables[var]
         self.target_value.net.set_weights(value_variables)
+
+        return value_loss, critic1_loss, critic2_loss, actor_loss
 
     def random_play(self, batch_size):
         """
