@@ -9,8 +9,8 @@ from models import ActorNetwork, CriticNetwork, ValueNetwork
 
 
 # Learning parameters
-REWARD_SCALE = 5
-LEARNING_RATE = 3e-4
+REWARD_SCALE = 10
+LEARNING_RATE = 1e-4
 GAMMA = 0.99
 TAU = 0.005
 
@@ -22,7 +22,7 @@ class HER_SAC_Agent:
         # env
         self.env = env
         self.her_buffer = her_buffer
-        self.env.reset()
+        self.starting_state = self.env.reset()
 
         # input shape
         self.normal_state_shape = \
@@ -39,6 +39,7 @@ class HER_SAC_Agent:
         self.critic_2 = CriticNetwork(self.critic_state_shape)
         self.value = ValueNetwork(self.normal_state_shape)
         self.target_value = ValueNetwork(self.normal_state_shape)
+        self._targetbuild()
 
         # optimizers
         if optimizer == 'Adam':
@@ -52,6 +53,13 @@ class HER_SAC_Agent:
             self.critic2_optimizer = None
             self.value_optimizer = None
             print("Error: wrong or not supported optimizer")
+
+    def _targetbuild(self):
+        """
+        Required to build target value network
+        """
+        arr = np.array(np.zeros(self.normal_state_shape), ndmin=2)
+        dummy_build = self.target_value(arr)
 
     def getBuffer(self):
         return self.her_buffer
@@ -157,16 +165,18 @@ class HER_SAC_Agent:
         actor_grads = actor_tape.gradient(actor_loss, variables)
         self.actor_optimizer.apply_gradients(zip(actor_grads, variables))
 
-        # 5° step - update target network
-        dummy_build = self.target_value(states)
+        return value_loss, critic1_loss, critic2_loss, actor_loss
+
+    def update_target(self):
+        """
+        Update target network 
+        """
         target_value_variables = self.target_value.trainable_variables
         value_variables = self.value.trainable_variables
         for var in range(len(value_variables)):
             value_variables[var] = \
                 TAU*value_variables[var] + (1-TAU)*target_value_variables[var]
         self.target_value.net.set_weights(value_variables)
-
-        return value_loss, critic1_loss, critic2_loss, actor_loss
 
     def random_play(self, batch_size):
         """
