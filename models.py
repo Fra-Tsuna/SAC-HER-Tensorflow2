@@ -29,20 +29,20 @@ class ActorNetwork(Model):
         self.layer_1 = layers.Dense(ACTOR_DENSE_1, activation=layers.ReLU())
         self.layer_2 = layers.Dense(ACTOR_DENSE_2, activation=layers.ReLU())
         self.mean = layers.Dense(action_dim)
-        self.std_dev = layers.Dense(action_dim)
+        self.log_std_dev = layers.Dense(action_dim)
 
     def call(self, state, noisy=True):
 
         # policy parameters 
         out_linear = self.layer_2(self.layer_1(self.input_layer(state)))
         mi = self.mean(out_linear)
-        sigma = tf.clip_by_value(self.std_dev(out_linear), NOISE, 1)
+        sigma = tf.clip_by_value(tf.exp(self.log_std_dev(out_linear)), NOISE, 1)
         policy = tfp.distributions.Normal(mi, sigma)
         noise = tfp.distributions.Normal(0,1).sample()
 
         # action selection
         if noisy:
-            action_sample = noise + policy.sample()
+            action_sample = mi + noise*sigma
         else:
             action_sample = policy.sample()
         action = tf.tanh(action_sample)
