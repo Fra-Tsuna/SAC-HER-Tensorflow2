@@ -5,14 +5,18 @@ from HER import HER_Buffer, Experience
 import tensorflow as tf
 from tensorflow.keras.optimizers import Adam
 import numpy as np
+import time
 from models import ActorNetwork, CriticNetwork, ValueNetwork
+from tensorflow_addons.optimizers import RectifiedAdam
+from normalizer import Normalizer
 
 
 # Learning parameters
-REWARD_SCALE = 10
-LEARNING_RATE = 0.0004
+REWARD_SCALE = 20
+LEARNING_RATE = 0.001
 GAMMA = 0.98
 TAU = 0.005
+NORM_CLIP_RANGE = 5
 
 
 class HER_SAC_Agent:
@@ -23,22 +27,32 @@ class HER_SAC_Agent:
         self.env = env
         self.her_buffer = her_buffer
         self.starting_state = self.env.reset()
+        self.max_action = self.env.action_space.high[0]
+        self.obs_size = self.env.observation_space['observation'].shape[0]
+        self.goal_size = self.env.observation_space['desired_goal'].shape[0]
+        self.state_size = self.obs_size + self.goal_size
+        self.action_size = self.env.action_space.shape[0]
 
-        # input shape
-        self.normal_state_shape = \
-            ((env.observation_space['observation'].shape[0] +
-              env.observation_space['desired_goal'].shape[0]),)
-        self.critic_state_shape = \
-            ((env.observation_space['observation'].shape[0] +
-              env.observation_space['desired_goal'].shape[0] +
-              env.action_space.shape[0]),)
+        # input shapes
+        self.normal_state_shape = (self.state_size,)
+        self.critic_state_shape = ((self.state_size + self.action_size),)
 
         # networks
-        self.actor = ActorNetwork(self.normal_state_shape, env.action_space.shape[0])
+        self.actor = ActorNetwork(self.normal_state_shape, self.action_size)
         self.critic_1 = CriticNetwork(self.critic_state_shape)
         self.critic_2 = CriticNetwork(self.critic_state_shape)
         self.value = ValueNetwork(self.normal_state_shape)
         self.target_value = ValueNetwork(self.normal_state_shape)
+
+        # normalizers
+        self.state_norm = Normalizer(size=self.obs_size, clip_range=NORM_CLIP_RANGE)
+        self.goal_norm = Normalizer(size=self.goal_size, clip_range=NORM_CLIP_RANGE)
+
+        # building value and target value
+        input = tf.keras.Input(shape=(self.normal_state_shape), dtype=tf.float32)
+        self.value(input)
+        self.target_value(input)
+        self.soft_update(tau = 1.0)
 
         # optimizers
         if optimizer == 'Adam':
@@ -46,11 +60,15 @@ class HER_SAC_Agent:
             self.critic1_optimizer = Adam(LEARNING_RATE)
             self.critic2_optimizer = Adam(LEARNING_RATE)
             self.value_optimizer = Adam(LEARNING_RATE)
+        elif optimizer == 'Rectified_Adam':
+            self.actor_optimizer = RectifiedAdam(LEARNING_RATE)
+            self.critic1_optimizer = RectifiedAdam(LEARNING_RATE)
+            self.critic2_optimizer = RectifiedAdam(LEARNING_RATE)
+            self.value_optimizer = RectifiedAdam(LEARNING_RATE)
         else:
             self.actor_optimizer = None
             self.critic1_optimizer = None
             self.critic2_optimizer = None
-            self.value_optimizer = None
             print("Error: wrong or not supported optimizer")
 
     def getBuffer(self):
@@ -82,27 +100,27 @@ class HER_SAC_Agent:
                 if np.random.random() < epsilon:
                     action = self.env.action_space.sample()
                 else:
-                    state_goal = \
-                        np.concatenate([state['observation'], state['desired_goal']])
-                    state_goal = np.array(state_goal, ndmin=2)
-                    action, _ = self.actor(state_goal, noisy=False)
+                    obs_norm = self.state_norm.normalize(state['observation'])
+                    goal_norm = self.goal_norm.normalize(state['desired_goal'])
+                    obs_goal = \
+                        np.concatenate([obs_norm, goal_norm])
+                    obs_goal = np.array(obs_goal, ndmin=2)
+                    action, _ = self.actor(obs_goal, noisy=False)
                     action = action.numpy()[0]
             else:
                 print("ERROR: Wrong criterion for choosing the action")
             new_state, reward, done, _ = self.env.step(action)
             experiences.append(Experience(state, action, reward, new_state, done))
             state = new_state
-            print("\tStep: ", step, "Reward = ", reward)        
+            #print("\tStep: ", step, "Reward = ", reward)        
         return experiences
 
     def optimization(self, minibatch):
         """
         Update networks in order to learn the correct policy
-
         Parameters
         ----------
         minibatch: sample from the her buffer for the optimization
-
         Returns
         -------
         *_loss: loss of the correspondent network
@@ -163,13 +181,33 @@ class HER_SAC_Agent:
         
         return value_loss, critic1_loss, critic2_loss, actor_loss
 
-    def update_target(self):
-        target_value_variables = self.target_value.trainable_variables
-        value_variables = self.value.trainable_variables
-        for var in range(len(value_variables)):
-            value_variables[var] = \
-                TAU*value_variables[var] + (1-TAU)*target_value_variables[var]
-        self.target_value.set_weights(value_variables)
+    def soft_update(self, tau=TAU):
+        for source, target in zip(self.value.variables, self.target_value.variables):
+            target.assign((1.0 - tau) * target + tau * source)
+
+    def update_normalizer(self, batch, hindsight=False):
+        if not hindsight:
+            obs = [exp.state['observation'] for exp in batch]
+            g = [exp.state['desired_goal'] for exp in batch]
+        else:
+            obs = [exp.state[0:-self.goal_size] for exp in batch]
+            g = [exp.state[-self.goal_size:] for exp in batch]
+        self.state_norm.update(np.array(obs))
+        self.goal_norm.update(np.array(g))
+        self.state_norm.recompute_stats()
+        self.goal_norm.recompute_stats()
+
+    def normalize_her_batch(self, her_batch):
+        for i in range(len(her_batch)):
+            her_batch[i].state[0:-self.goal_size] = \
+                self.state_norm.normalize(her_batch[i].state[0:-self.goal_size])
+            her_batch[i].state[-self.goal_size:] = \
+                self.goal_norm.normalize(her_batch[i].state[-self.goal_size:])
+            her_batch[i].new_state[0:-self.goal_size] = \
+                self.state_norm.normalize(her_batch[i].new_state[0:-self.goal_size])
+            her_batch[i].new_state[-self.goal_size:] = \
+                self.goal_norm.normalize(her_batch[i].new_state[-self.goal_size:])
+        return her_batch                                                                              
 
     def random_play(self, batch_size):
         """
