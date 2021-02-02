@@ -24,17 +24,6 @@ class HER_Buffer:
     def __len__(self):
         return len(self.buffer)
 
-    def append(self, exp):
-        """
-        Insert new element to the buffer (if full, old memory is dropped)
-
-        Parameters
-        ----------
-        exp: experience to store = [state_goal, action, reward, newState_goal, done]
-            N.B: _ denotes concatenation
-        """
-        self.buffer.append(exp)
-
     def store_experience(self, experience, reward, goal):
         """
         Store an experience in the HER buffer
@@ -45,14 +34,9 @@ class HER_Buffer:
         reward: the reward computed in the agent's env
         goal: the goal to concatenate to the states
         """
-        state = experience.state
-        action = experience.action
-        newState = experience.new_state
-        done = experience.done
-        state_goal = np.concatenate([state['observation'], goal])
-        newState_goal = np.concatenate([newState['observation'], goal])
-        self.buffer.append(
-            Experience(state_goal, action, reward, newState_goal, done))
+        hindsight_exp = self._hindsight_representation(experience, reward, goal)
+        self.buffer.append(hindsight_exp)
+        return hindsight_exp
 
     def sample(self, minibatch=1):
         """
@@ -74,3 +58,24 @@ class HER_Buffer:
             for index in locations:
                 items.append(self.buffer[index])
         return items
+
+    def _hindsight_representation(self, experience, reward, goal):
+        """
+        Convert the experience in input into the her canonical representation
+        
+        Parameters
+        ----------
+        experience: experience to convert
+        goal: the goal obtained with the opportune strategy
+        
+        Return
+        ------
+        experience converted
+        """
+        state = experience.state
+        action = experience.action
+        newState = experience.new_state
+        done = experience.done
+        state_goal = np.concatenate([state['observation'], goal])
+        newState_goal = np.concatenate([newState['observation'], goal])
+        return Experience(state_goal, action, reward, newState_goal, done)
