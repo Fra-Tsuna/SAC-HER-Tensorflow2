@@ -12,9 +12,6 @@ from tensorboardX import SummaryWriter
 import numpy as np
 import random
 
-# Time management libraries
-import time
-
 # Personal libraries
 from HER import HER_Buffer, Experience
 from HER_SAC_agent import HER_SAC_Agent
@@ -30,8 +27,9 @@ LOG_DIR = "/home/gianfranco/Desktop/FetchLog/reach"
 TRAINING_EPOCHES = 200
 BATCH_SIZE = 50
 OPTIMIZATION_STEPS = 40
-POLICY_STEPS = 16
+POLICY_STEPS = 2
 RANDOM_EPISODES = 1000
+EVAL_EPISODES = 10
 
 # HER parameters
 HER_CAPACITY = 1000000
@@ -42,8 +40,6 @@ FUTURE_K = 4
 
 # learning parameters
 EPSILON_START = 0.5
-#EPSILON_FINAL = 0.2
-#EPSILON_DECAY_LAST_ITER = 300000  
 
 # debug parameters
 DEBUG_EPISODE_EXP = False
@@ -68,30 +64,27 @@ if __name__ == '__main__':
     # Pre-training initialization
     iterations = 0
     loss_vect = []
-    reward_vect = []
     epsilon = EPSILON_START
 
     # Training 
     for epoch in range(TRAINING_EPOCHES):
         print("\n\n************ TRAINING EPOCH ", epoch, "************\n")
+        reward_vect = []
 
         ## play batch of cycles
         for cycle in range(BATCH_SIZE):
             print("Epoch ", epoch, "- Cycle ", cycle)
+            hindsight_experiences = []
 
             ### play episodes
             for policy_step in range(POLICY_STEPS):
                 #print("\t____Policy episode ", policy_step, "____")
-                #epsilon = max(EPSILON_FINAL, EPSILON_START -
-                #            iterations / EPSILON_DECAY_LAST_ITER)
                 experiences = agent.play_episode(criterion="SAC", epsilon=epsilon)
                 achieved_goal = experiences[-1].new_state['achieved_goal']
                 goal = experiences[-1].state['desired_goal']
                 true_reward = agent.env.compute_reward(achieved_goal, goal, None)
-                hindsight_experiences = []
                 if DEBUG_EPISODE_EXP:
                     print("\n\n++++++++++++++++ DEBUG - EPISODE EXPERIENCES [MAIN.POLICY_STEPS] +++++++++++++++++\n")
-                    time.sleep(1)
                     print("----------------------------len experiences----------------------------")
                     print(len(experiences))
                     print("----------------------------last experience----------------------------")
@@ -106,7 +99,6 @@ if __name__ == '__main__':
                 iterations += len(experiences)
                 if DEBUG_STORE_EXP:
                     print("\n\n++++++++++++++++ DEBUG - STORE EXPERIENCES [MAIN.POLICY_STEPS] +++++++++++++++++\n")
-                    time.sleep(1)
                 for t in range(len(experiences)):
                     reward_vect.append(experiences[t].reward)
                     hindsight_exp = agent.getBuffer().store_experience(experiences[t], 
@@ -142,14 +134,15 @@ if __name__ == '__main__':
                                 print("----------------------------hindsight experience future----------------------------")
                                 print(hindsight_exp)
                     if DEBUG_STORE_EXP:
-                        a = input("\n\nPress Enter to continue...")
-                agent.update_normalizer(batch=hindsight_experiences, hindsight=True)    
+                        a = input("\n\nPress Enter to continue...")     
 
                 #### print results
                 if iterations > 5000:
                     m_reward_5000 = np.mean(reward_vect[-5000:])
-                    writer.add_scalar("epsilon", epsilon, iterations)
                     writer.add_scalar("mean_reward_5000", m_reward_5000, iterations)
+
+            ### normalization
+            agent.update_normalizer(batch=hindsight_experiences, hindsight=True)
 
             ### optimization
             if len(agent.getBuffer()) >= REPLAY_START_SIZE:
@@ -159,7 +152,6 @@ if __name__ == '__main__':
                     minibatch = agent.getBuffer().sample(MINIBATCH_SAMPLE_SIZE)
                     if DEBUG_MINIBATCH_SAMPLE:
                         print("\n\n++++++++++++++++ DEBUG - MINIBATCH SAMPLE [MAIN.OPTIMIZATION_STEPS] +++++++++++++++++\n")
-                        time.sleep(1)
                         print("----------------------------len minibatch----------------------------")
                         print(len(minibatch))
                         print("----------------------------element 0----------------------------")
@@ -169,15 +161,18 @@ if __name__ == '__main__':
                         print("----------------------------random element----------------------------")
                         print(minibatch[random.randint(0, len(minibatch)-1)])
                         a = input("\n\nPress Enter to continue...")
-                    minibatch = agent.normalize_her_batch(minibatch)
                     v_loss, c1_loss, c2_loss, act_loss = \
                         agent.optimization(minibatch)
                     agent.soft_update()
 
-        ## success rate
-        total_success = 0
-        for rew in reward_vect:
-            total_success += 1 if rew > -1 else 0
-        success_rate = total_success/len(reward_vect)
+        ## evaluation
+        print("\n\nEVALUATION\n\n")
+        success_rates = []
+        for _ in range(EVAL_EPISODES):
+            experiences = agent.play_episode(criterion="SAC", epsilon=0)
+            total_reward = sum([exp.reward for exp in experiences])
+            success_rate = (len(experiences) - total_reward) / len(experiences)
+            success_rates.append(success_rate)
+        success_rate = sum(success_rates) / len(success_rates)
+        print("Success_rate = ", success_rate)
         writer.add_scalar("success rate per epoch", success_rate, epoch)
-        reward_vect = []
