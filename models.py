@@ -7,6 +7,7 @@ import tensorflow_probability as tfp
 from tensorflow.keras import \
     Model, Sequential, layers
 from tensorflow.keras.models import clone_model
+import time
 
 
 # Hyperparameters
@@ -21,10 +22,8 @@ NOISE = 1e-6
 
 
 class ActorNetwork(Model):
-
     def __init__(self, input_dim, action_dim):
         super(ActorNetwork, self).__init__()
-
         self.input_layer = layers.InputLayer(input_shape=input_dim)
         self.layer_1 = layers.Dense(ACTOR_DENSE_1, activation=layers.ReLU())
         self.layer_2 = layers.Dense(ACTOR_DENSE_2, activation=layers.ReLU())
@@ -32,27 +31,21 @@ class ActorNetwork(Model):
         self.log_std_dev = layers.Dense(action_dim)
 
     def call(self, state, noisy=True):
-
-        # policy parameters 
-        out_linear = self.layer_2(self.layer_1(self.input_layer(state)))
-        mi = self.mean(out_linear)
-        sigma = tf.clip_by_value(tf.exp(self.log_std_dev(out_linear)), NOISE, 1)
-        policy = tfp.distributions.Normal(mi, sigma)
+        x = self.layer_2(self.layer_1(self.input_layer(state)))
+        mean = self.mean(x)
+        log_std = self.log_std_dev(x)
+        log_std_clipped = tf.clip_by_value(log_std, NOISE, 1)
+        policy = tfp.distributions.Normal(mean, tf.exp(log_std_clipped))
         noise = tfp.distributions.Normal(0,1).sample()
-
-        # action selection
         if noisy:
-            action_sample = mi + noise*sigma
+            action_sample = mean + noise*tf.exp(log_std_clipped)
         else:
             action_sample = policy.sample()
-        action = tf.tanh(action_sample)
-        log_probs = policy.log_prob(action_sample)
+        squashed_actions = tf.tanh(action_sample)
+        logprob = policy.log_prob(action_sample) - tf.math.log(1.0 - tf.pow(squashed_actions, 2) + NOISE)
+        logprob = tf.reduce_sum(logprob, axis=-1, keepdims=True)
+        return squashed_actions, logprob
 
-        # enforcing action bounds
-        log_probs -= \
-            tf.reduce_sum(tf.math.log(1 - action**2 + NOISE), axis=1, keepdims=True)
-
-        return action, log_probs
 
 class CriticNetwork(Model):
 
