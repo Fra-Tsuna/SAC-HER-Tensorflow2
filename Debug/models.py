@@ -18,7 +18,7 @@ CRITIC_DENSE_2 = 256
 VALUE_DENSE_1 = 256
 VALUE_DENSE_2 = 256
 
-NOISE = 1e-7
+NOISE = 1e-6
 
 # debug parameters
 DEBUG_ACTOR = False
@@ -75,7 +75,7 @@ class ActorNetwork(Model):
         if DEBUG_ACTOR:
             print("\t----------------------------log probs after sum----------------------------")
             print("\t", logprob)
-            #a = input("\n\n\tPress Enter to continue...")
+            a = input("\n\n\tPress Enter to continue...")
         return squashed_actions, logprob
 
 
