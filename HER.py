@@ -4,6 +4,7 @@
 import numpy as np
 from collections import namedtuple, deque
 import tensorflow as tf
+import time
 
 
 """ 
@@ -23,6 +24,17 @@ class HER_Buffer:
 
     def __len__(self):
         return len(self.buffer)
+
+    def append(self, exp):
+        """
+        Insert new element to the buffer (if full, old memory is dropped)
+
+        Parameters
+        ----------
+        exp: experience to store = [state_goal, action, reward, newState_goal, done]
+            N.B: _ denotes concatenation
+        """
+        self.buffer.append(exp)
 
     def store_experience(self, experience, reward, goal):
         """
@@ -50,7 +62,7 @@ class HER_Buffer:
         -------
         items: items sampled from the buffer
         """
-        locations = np.random.choice(len(self.buffer), minibatch, replace=False)
+        locations = np.random.choice(len(self.buffer), minibatch, replace=False)            
         if minibatch == 1:
             items = self.buffer[locations[0]]
         else:
