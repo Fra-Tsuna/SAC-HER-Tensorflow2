@@ -5,7 +5,7 @@ from HER import HER_Buffer, Experience
 import tensorflow as tf
 from tensorflow.keras.optimizers import Adam
 import numpy as np
-import time
+import random
 from models import ActorNetwork, CriticNetwork, ValueNetwork
 from tensorflow_addons.optimizers import RectifiedAdam
 from normalizer import Normalizer
@@ -17,6 +17,7 @@ LEARNING_RATE = 0.001
 GAMMA = 0.98
 TAU = 0.005
 NORM_CLIP_RANGE = 5
+CLIP_MAX = 200
 
 
 class HER_SAC_Agent:
@@ -108,7 +109,7 @@ class HER_SAC_Agent:
                     action, _ = self.actor(obs_goal, noisy=False)
                     action = action.numpy()[0]
             else:
-                print("ERROR: Wrong criterion for choosing the action")
+                raise TypeError("ERROR: Wrong criterion for choosing the action")
             new_state, reward, done, _ = self.env.step(action)
             experiences.append(Experience(state, action, reward, new_state, done))
             state = new_state
@@ -126,13 +127,12 @@ class HER_SAC_Agent:
         *_loss: loss of the correspondent network
         """
         # 1° step: unzip minibatch sampled from HER
-        states, exp_actions, new_states, rewards, dones = [], [], [], [], []
+        exp_actions, rewards, dones = [], [], []
         for exp in minibatch:
-            states.append(exp.state)
             exp_actions.append(exp.action)
-            new_states.append(exp.new_state)
             rewards.append(exp.reward)
             dones.append(exp.done)
+        states, new_states = self.preprocess_inputs(minibatch)
         states = np.array(states, ndmin=2)
         new_states = np.array(new_states, ndmin=2)
 
@@ -191,23 +191,24 @@ class HER_SAC_Agent:
             g = [exp.state['desired_goal'] for exp in batch]
         else:
             obs = [exp.state[0:-self.goal_size] for exp in batch]
-            g = [exp.state[-self.goal_size:] for exp in batch]
-        self.state_norm.update(np.array(obs))
-        self.goal_norm.update(np.array(g))
-        self.state_norm.recompute_stats()
-        self.goal_norm.recompute_stats()
+            g = [exp.state[-self.goal_size:] for exp in batch] 
+        self.state_norm.update(np.clip(obs, -CLIP_MAX, CLIP_MAX))
+        self.goal_norm.update(np.clip(g, -CLIP_MAX, CLIP_MAX))
 
-    def normalize_her_batch(self, her_batch):
+    def preprocess_inputs(self, her_batch):
+        states, new_states, goals, new_goals = [], [], [], []
         for i in range(len(her_batch)):
-            her_batch[i].state[0:-self.goal_size] = \
-                self.state_norm.normalize(her_batch[i].state[0:-self.goal_size])
-            her_batch[i].state[-self.goal_size:] = \
-                self.goal_norm.normalize(her_batch[i].state[-self.goal_size:])
-            her_batch[i].new_state[0:-self.goal_size] = \
-                self.state_norm.normalize(her_batch[i].new_state[0:-self.goal_size])
-            her_batch[i].new_state[-self.goal_size:] = \
-                self.goal_norm.normalize(her_batch[i].new_state[-self.goal_size:])
-        return her_batch                                                                              
+            states.append(her_batch[i].state[0:-self.goal_size])
+            new_states.append(her_batch[i].new_state[0:-self.goal_size])
+            goals.append(her_batch[i].state[-self.goal_size:])
+            new_goals.append(her_batch[i].new_state[-self.goal_size:])
+        states = self.state_norm.normalize(np.clip(states, -CLIP_MAX, CLIP_MAX))
+        new_states = self.state_norm.normalize(np.clip(new_states, -CLIP_MAX, CLIP_MAX))
+        goals = self.goal_norm.normalize(np.clip(goals, -CLIP_MAX, CLIP_MAX))
+        new_goals = self.goal_norm.normalize(np.clip(new_goals, -CLIP_MAX, CLIP_MAX))
+        inputs = np.concatenate([states, goals], axis=1)
+        new_inputs = np.concatenate([new_states, new_goals], axis=1)
+        return inputs, new_inputs
 
     def random_play(self, batch_size):
         """
