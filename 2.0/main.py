@@ -38,11 +38,6 @@ FUTURE_K = 4
 # learning parameters
 EPSILON_START = 0.3
 
-# debug parameters
-DEBUG_EPISODE_EXP = False
-DEBUG_STORE_EXP = False
-DEBUG_MINIBATCH_SAMPLE = False
-
 # _____________________________________________________ Main _____________________________________________________ #
 
 
