@@ -24,14 +24,6 @@ TAU = 0.005
 NORM_CLIP_RANGE = 5
 CLIP_MAX = 200
 
-# debug parameters
-DEBUG_STATE = False
-DEBUG_ACTION = False
-DEBUG_LAST_EXP = False
-DEBUG_FIRST_EXP = False
-DEBUG_NORM_SAMPLE = False
-#DEBUG_MINIBATCH_SAMPLE = False
-
 
 class HER_SAC_Agent:
 
@@ -110,10 +102,6 @@ class HER_SAC_Agent:
         while not done:
             step += 1
             self.env.render()
-            if DEBUG_STATE:
-                print("++++++++++++++++ DEBUG - STATE [AGENT.PLAY_EPISODE] ++++++++++++++++\n")
-                print("----------------------------state----------------------------")
-                print(state)
             if criterion == "random":
                 action = self.env.action_space.sample()
             elif criterion == "SAC":
@@ -125,29 +113,12 @@ class HER_SAC_Agent:
                     obs_goal = \
                         np.concatenate([obs_norm, goal_norm])
                     obs_goal = np.array(obs_goal, ndmin=2)
-                    if DEBUG_STATE:
-                        print("----------------------------obs_norm||goal----------------------------")
-                        print(obs_goal)
                     action, _ = self.actor(obs_goal, noisy=False)
                     action = action.numpy()[0]
             else:
                 print("ERROR: Wrong criterion for choosing the action")
-            if DEBUG_STATE:
-                a = input("\n\nPress Enter to continue...")
             new_state, reward, done, _ = self.env.step(action)
             experiences.append(Experience(state, action, reward, new_state, done))
-            if DEBUG_ACTION:
-                print("\n\n++++++++++++++++ DEBUG - TAKE ACTION [AGENT.PLAY_EPISODE] +++++++++++++++++\n")
-                print("----------------------------action to take----------------------------")
-                print(action)
-                print("----------------------------new state----------------------------")
-                print(new_state)
-                print("----------------------------reward----------------------------")
-                print(reward)
-                print("----------------------------done----------------------------")
-                print("----------------------------experience appended----------------------------")
-                print(experiences[0])
-                a = input("\n\nPress Enter to continue...")
             state = new_state
             #print("\tStep: ", step, "Reward = ", reward)        
             if learn and len(self.her_buffer) > MINIBATCH_SAMPLE_SIZE:
@@ -159,12 +130,6 @@ class HER_SAC_Agent:
                     v_loss, c1_loss, c2_loss, act_loss = \
                         self.optimization(states, exp_actions, rewards, new_states, dones)
                     self.soft_update()
-        if DEBUG_LAST_EXP:
-            print("\n\n++++++++++++++++ DEBUG - LAST EXPERIENCE [AGENT.PLAY_EPISODE] +++++++++++++++++\n")
-            print(experiences[-1])
-        if DEBUG_FIRST_EXP:
-            print("\n\n++++++++++++++++ DEBUG - FIRST EXPERIENCE [AGENT.PLAY_EPISODE] +++++++++++++++++\n")
-            print(experiences[0])
         return experiences
 
     @tf.function
@@ -180,27 +145,6 @@ class HER_SAC_Agent:
         """
         # 1° step: preprocess input tensors
         states, new_states = self.preprocess_inputs(states, new_states)
-
-        if DEBUG_NORM_SAMPLE:
-            tf.print("\n\n++++++++++++++++ DEBUG - HER NORM STATES/GOAL [AGENT.OPTIMIZATION] +++++++++++++++++\n")
-            tf.print("----------------------------exp action 0----------------------------")
-            tf.print(states[0])
-            tf.print(exp_actions[0])
-            tf.print("----------------------------rewards 0----------------------------")
-            tf.print(rewards[0])
-            tf.print("----------------------------!dones 0----------------------------")
-            tf.print(not_dones[0])
-            tf.print("----------------------------element 0----------------------------")
-            tf.print(states[0][0:-self.goal_size])
-            tf.print(states[0][-self.goal_size:])
-            tf.print("----------------------------element -1----------------------------")
-            tf.print(states[-1][0:-self.goal_size])
-            tf.print(states[-1][-self.goal_size:])
-            tf.print("----------------------------random element----------------------------")
-            elem = random.randint(0, len(states)-1)
-            tf.print(elem)
-            tf.print(states[elem][0:-self.goal_size])
-            tf.print(states[elem][-self.goal_size:])
 
         # 2° step: optimize value network
         actions, log_probs = self.actor(states, noisy=False)
