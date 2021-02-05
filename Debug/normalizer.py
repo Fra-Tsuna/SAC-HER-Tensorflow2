@@ -1,6 +1,10 @@
-import numpy as np
+#!/usr/bin/env python3
 
-DEBUG_NORMALIZER = False
+import numpy as np
+import tensorflow as tf
+
+DEBUG_NORMALIZE = False
+DEBUG_UPDATE = False
 NORMALIZATION = "Gaussian"
 
 class Normalizer:
@@ -23,7 +27,9 @@ class Normalizer:
             raise TypeError("Wrong normalization type")
 
     def update(self, buffer):
-        buffer = np.array(buffer)
+        #buffer = np.array(buffer)
+        #elem = [a[3] for a in buffer if buffer.shape[1]>3]
+        #print(elem)
         if self.normalization == "Gaussian":
             self.local_sum += buffer.sum(axis=0)
             self.local_sumsq += (np.square(buffer)).sum(axis=0)
@@ -33,16 +39,8 @@ class Normalizer:
         elif self.normalization == "MinMax":
             self.min = np.minimum(self.min, buffer.min(axis=0))
             self.max = np.maximum(self.max, buffer.max(axis=0))
-
-    def normalize(self, v, clip_range=None):
-        if clip_range is None:
-            clip_range = self.clip_range
-        if self.normalization == "Gaussian":
-            v_norm = (v - self.mean) / self.std
-        elif self.normalization == "MinMax":
-            v_norm = (v - self.min) / (self.max - self.min)
-        if DEBUG_NORMALIZER:
-            print("++++++++++++++++ DEBUG - NORMALIZER [NORMALIZER.NORMALIZE] ++++++++++++++++\n")
+        if DEBUG_UPDATE:
+            print("++++++++++++++++ DEBUG - UPDATE NORMALIZER [NORMALIZER.UPDATE] ++++++++++++++++\n")
             if self.normalization == "Gaussian":
                 print("----------------------------mean----------------------------")
                 print(self.mean)
@@ -59,9 +57,36 @@ class Normalizer:
                 print(self.min)
                 print("----------------------------std-dev----------------------------")
                 print(self.max)
-            print("----------------------------vector----------------------------")
-            print(v)
-            print("----------------------------v_norm----------------------------")
-            print(v_norm)
-            a = input("\n\nPress Enter to continue...") 
+            a = input("\n\nPress Enter to continue...")
+
+    def normalize(self, v, clip_range=None):
+        if clip_range is None:
+            clip_range = self.clip_range
+        if self.normalization == "Gaussian":
+            v_norm = (v - self.mean) / self.std
+        elif self.normalization == "MinMax":
+            v_norm = (v - self.min) / (self.max - self.min)
+        if DEBUG_NORMALIZE:
+            print("++++++++++++++++ DEBUG - NORMALIZE [NORMALIZER.NORMALIZE] ++++++++++++++++\n")
+            if self.normalization == "Gaussian":
+                print("----------------------------mean----------------------------")
+                print(self.mean)
+                print("----------------------------std-dev----------------------------")
+                print(self.std)
+                print("----------------------------local_sum----------------------------")
+                print(self.local_sum)
+                print("----------------------------local_count----------------------------")
+                print(self.local_count)
+                print("----------------------------local_sumsq----------------------------")
+                print(self.local_sumsq)
+            elif self.normalization == "MinMax":
+                print("----------------------------mean----------------------------")
+                print(self.min)
+                print("----------------------------std-dev----------------------------")
+                print(self.max)
+            #print("----------------------------vector----------------------------")
+            #print(v)
+            #print("----------------------------v_norm----------------------------")
+            #print(v_norm)
+            #a = input("\n\nPress Enter to continue...") 
         return np.clip(v_norm, -clip_range, clip_range)
