@@ -101,6 +101,8 @@ if __name__ == '__main__':
                     print("\n\n++++++++++++++++ DEBUG - STORE EXPERIENCES [MAIN.POLICY_STEPS] +++++++++++++++++\n")
                 for t in range(len(experiences)):
                     reward_vect.append(experiences[t].reward)
+                    achieved_goal = experiences[t].new_state['achieved_goal']
+                    true_reward = agent.env.compute_reward(achieved_goal, goal, None)
                     hindsight_exp = agent.getBuffer().store_experience(experiences[t], 
                                                                     true_reward, goal)
                     hindsight_experiences.append(hindsight_exp)
@@ -109,7 +111,6 @@ if __name__ == '__main__':
                         print(experiences[t])
                         print("----------------------------hindsight experience true----------------------------")
                         print(hindsight_exp)
-                    achieved_goal = experiences[t].new_state['achieved_goal']
                     if STRATEGY == "final":
                         desired_goal = experiences[-1].new_state['achieved_goal']
                         her_reward = \
@@ -124,7 +125,6 @@ if __name__ == '__main__':
                                 print("----------------------------future index----------------------------")
                                 print(future)
                             desired_goal = experiences[future].new_state['achieved_goal']
-                            achieved_goal = experiences[t].new_state['achieved_goal']
                             her_reward = \
                                 agent.env.compute_reward(achieved_goal, desired_goal, None)
                             hindsight_exp = agent.getBuffer().store_experience(experiences[t],
