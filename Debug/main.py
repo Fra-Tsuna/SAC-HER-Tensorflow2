@@ -21,7 +21,7 @@ from HER_SAC_agent import HER_SAC_Agent
 
 # environment parameters
 ENV_NAME = "FetchReach-v1"
-LOG_DIR = "/home/gianfranco/Desktop/FetchLog/reach"
+LOG_DIR = "/home/gianfranco/Desktop/FetchLog"
 
 # training parameters
 TRAINING_EPOCHES = 200
@@ -34,7 +34,7 @@ EVAL_EPISODES = 10
 # HER parameters
 HER_CAPACITY = 1000000
 REPLAY_START_SIZE = 1000
-MINIBATCH_SAMPLE_SIZE = 128
+MINIBATCH_SAMPLE_SIZE = 256
 STRATEGY = "future"
 FUTURE_K = 4
 
@@ -45,6 +45,7 @@ EPSILON_START = 0.5
 DEBUG_EPISODE_EXP = False
 DEBUG_STORE_EXP = False
 DEBUG_MINIBATCH_SAMPLE = False
+DEBUG_HINDSIGHT_EXP = False
 
 # _____________________________________________________ Main _____________________________________________________ #
 
@@ -81,8 +82,7 @@ if __name__ == '__main__':
                 #print("\t____Policy episode ", policy_step, "____")
                 experiences = agent.play_episode(criterion="SAC", epsilon=epsilon)
                 achieved_goal = experiences[-1].new_state['achieved_goal']
-                goal = experiences[-1].state['desired_goal']
-                true_reward = agent.env.compute_reward(achieved_goal, goal, None)
+                goal = experiences[0].state['desired_goal']
                 if DEBUG_EPISODE_EXP:
                     print("\n\n++++++++++++++++ DEBUG - EPISODE EXPERIENCES [MAIN.POLICY_STEPS] +++++++++++++++++\n")
                     print("----------------------------len experiences----------------------------")
@@ -102,11 +102,13 @@ if __name__ == '__main__':
                 for t in range(len(experiences)):
                     reward_vect.append(experiences[t].reward)
                     achieved_goal = experiences[t].new_state['achieved_goal']
-                    true_reward = agent.env.compute_reward(achieved_goal, goal, None)
+                    #true_reward = agent.env.compute_reward(achieved_goal, goal, None)
                     hindsight_exp = agent.getBuffer().store_experience(experiences[t], 
-                                                                    true_reward, goal)
+                                                                    experiences[t].reward, goal)
                     hindsight_experiences.append(hindsight_exp)
                     if DEBUG_STORE_EXP:
+                        print("----------------------------actual t----------------------------")
+                        print(t)
                         print("----------------------------actual experience----------------------------")
                         print(experiences[t])
                         print("----------------------------hindsight experience true----------------------------")
@@ -137,11 +139,24 @@ if __name__ == '__main__':
                         a = input("\n\nPress Enter to continue...")     
 
                 #### print results
-                if iterations > 5000:
-                    m_reward_5000 = np.mean(reward_vect[-5000:])
-                    writer.add_scalar("mean_reward_5000", m_reward_5000, iterations)
+                mean_reward = np.mean(reward_vect)
+                writer.add_scalar("mean_reward", mean_reward, iterations)
 
             ### normalization
+            if DEBUG_HINDSIGHT_EXP:
+                    print("\n\n++++++++++++++++ DEBUG - HINDSIGHT EXPERIENCES [MAIN.CYCLE] +++++++++++++++++\n")
+                    print("----------------------------len exp----------------------------")
+                    print(len(hindsight_experiences))
+                    print("----------------------------element 0----------------------------")
+                    print(hindsight_experiences[0])
+                    print("----------------------------element -1----------------------------")
+                    print(hindsight_experiences[-1])
+                    print("----------------------------random element----------------------------")
+                    print(hindsight_experiences[random.randint(0, len(hindsight_experiences)-1)])
+                    print("----------------------------positive rewards----------------------------")
+                    positive_rewards = [exp.reward for exp in hindsight_experiences if exp.reward > -1]
+                    print(len(positive_rewards))
+                    a = input("\n\nPress Enter to continue...")
             agent.update_normalizer(batch=hindsight_experiences, hindsight=True)
 
             ### optimization
