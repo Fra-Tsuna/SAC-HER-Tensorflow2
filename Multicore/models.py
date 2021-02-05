@@ -42,6 +42,7 @@ class ActorNetwork(Model):
         else:
             action_sample = policy.sample()
         squashed_actions = tf.tanh(action_sample)
+        logprob = policy.log_prob(action_sample) - tf.math.log(1.0 - tf.pow(squashed_actions, 2) + NOISE)
         logprob = tf.reduce_sum(logprob, axis=-1, keepdims=True)
         return squashed_actions, logprob
 
