@@ -75,16 +75,15 @@ if __name__ == '__main__':
             for policy_step in range(POLICY_STEPS):
                 #print("\t____Policy episode ", policy_step, "____")
                 experiences = agent.play_episode(criterion="SAC", epsilon=epsilon)
-                achieved_goal = experiences[-1].new_state['achieved_goal']
                 goal = experiences[-1].state['desired_goal']
-                true_reward = agent.env.compute_reward(achieved_goal, goal, None)
                 iterations += len(experiences)
                 for t in range(len(experiences)):
                     reward_vect.append(experiences[t].reward)
+                    achieved_goal = experiences[t].new_state['achieved_goal']
+                    true_reward = agent.env.compute_reward(achieved_goal, goal, None)
                     hindsight_exp = agent.getBuffer().store_experience(experiences[t], 
                                                                     true_reward, goal)
                     hindsight_experiences.append(hindsight_exp)
-                    achieved_goal = experiences[t].new_state['achieved_goal']
                     if STRATEGY == "final":
                         desired_goal = experiences[-1].new_state['achieved_goal']
                         her_reward = \
@@ -96,7 +95,6 @@ if __name__ == '__main__':
                         for f_t in range(FUTURE_K):
                             future = random.randint(t, (len(experiences)-1))
                             desired_goal = experiences[future].new_state['achieved_goal']
-                            achieved_goal = experiences[t].new_state['achieved_goal']
                             her_reward = \
                                 agent.env.compute_reward(achieved_goal, desired_goal, None)
                             hindsight_exp = agent.getBuffer().store_experience(experiences[t],
@@ -127,7 +125,7 @@ if __name__ == '__main__':
         for _ in range(EVAL_EPISODES):
             experiences = agent.play_episode(criterion="SAC", epsilon=0)
             total_reward = sum([exp.reward for exp in experiences])
-            success_rate = (len(experiences) - total_reward) / len(experiences)
+            success_rate = (len(experiences) + total_reward) / len(experiences)
             success_rates.append(success_rate)
         success_rate = sum(success_rates) / len(success_rates)
         print("Success_rate = ", success_rate)
