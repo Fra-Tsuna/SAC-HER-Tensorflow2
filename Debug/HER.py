@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 
 
@@ -34,7 +35,6 @@ class HER_Buffer:
     def append(self, exp):
         """
         Insert new element to the buffer (if full, old memory is dropped)
-
         Parameters
         ----------
         exp: experience to store = [state_goal, action, reward, newState_goal, done]
@@ -45,7 +45,6 @@ class HER_Buffer:
     def store_experience(self, experience, reward, goal):
         """
         Store an experience in the HER buffer
-
         Parameters
         ----------
         experience: experience to store
@@ -89,11 +88,9 @@ class HER_Buffer:
     def sample(self, minibatch=1):
         """
         Sample items from the buffer
-
         Parameters
         ----------
         minibatch: number of items to sample from the buffer
-
         Returns
         -------
         items: items sampled from the buffer
