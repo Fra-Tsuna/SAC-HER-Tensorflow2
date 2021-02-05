@@ -171,7 +171,7 @@ if __name__ == '__main__':
         for _ in range(EVAL_EPISODES):
             experiences = agent.play_episode(criterion="SAC", epsilon=0)
             total_reward = sum([exp.reward for exp in experiences])
-            success_rate = (len(experiences) - total_reward) / len(experiences)
+            success_rate = (len(experiences) + total_reward) / len(experiences)
             success_rates.append(success_rate)
         success_rate = sum(success_rates) / len(success_rates)
         print("Success_rate = ", success_rate)
