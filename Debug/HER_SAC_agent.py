@@ -13,7 +13,7 @@ from normalizer import Normalizer
 
 # Learning parameters
 REWARD_SCALE = 20
-LEARNING_RATE = 0.001
+LEARNING_RATE = 3e-4
 GAMMA = 0.98
 TAU = 0.005
 NORM_CLIP_RANGE = 5
@@ -25,6 +25,10 @@ DEBUG_ACTION = False
 DEBUG_LAST_EXP = False
 DEBUG_FIRST_EXP = False
 DEBUG_NORM_SAMPLE = False
+DEBUG_REW_ACT_DONE = False
+DEBUG_VALUE_OPTIM = False
+DEBUG_CRITIC_OPTIM = False
+DEBUG_ACTOR_OPTIM = True
 
 
 class HER_SAC_Agent:
@@ -90,7 +94,6 @@ class HER_SAC_Agent:
         ----------
         criterion: strategy to choose actions ('random' or 'SAC')
         epsilon: random factor for epsilon-greedy strategy
-
         Returns
         -------
         experiences: all experiences taken by the agent in the episode
@@ -137,6 +140,7 @@ class HER_SAC_Agent:
                 print("----------------------------reward----------------------------")
                 print(reward)
                 print("----------------------------done----------------------------")
+                print(done)
                 print("----------------------------experience appended----------------------------")
                 print(experiences[0])
                 a = input("\n\nPress Enter to continue...")
@@ -167,8 +171,6 @@ class HER_SAC_Agent:
             rewards.append(exp.reward)
             dones.append(exp.done)
         states, new_states = self.preprocess_inputs(minibatch)
-        states = np.array(states, ndmin=2)
-        new_states = np.array(new_states, ndmin=2)
 
         if DEBUG_NORM_SAMPLE:
             print("\n\n++++++++++++++++ DEBUG - HER NORM STATES/GOAL [AGENT.OPTIMIZATION] +++++++++++++++++\n")
@@ -185,39 +187,62 @@ class HER_SAC_Agent:
             print(states[elem][-self.goal_size:])
             a = input("\n\nPress Enter to continue...") 
 
-        states = np.array(states, ndmin=2)
-        new_states = np.array(new_states, ndmin=2)
+        if DEBUG_REW_ACT_DONE:
+            print("\n\n++++++++++++++++ DEBUG - HER SAMPLE REWARDS ACTIONS DONES [AGENT.OPTIMIZATION] +++++++++++++++++\n")
+            print("----------------------------rewards----------------------------")
+            print(rewards)
+            print("----------------------------actions----------------------------")
+            print(exp_actions)
+            print("----------------------------dones----------------------------")
+            print(dones)
+            a = input("\n\nPress Enter to continue...") 
+
         # 2° step: optimize value network
+        actions, log_probs = self.actor(states, noisy=False)
+        q1 = self.critic_1(states, actions)
+        q2 = self.critic_2(states, actions)
+        q = tf.minimum(q1, q2)
+        if DEBUG_VALUE_OPTIM:
+            print("\n\n++++++++++++++++ DEBUG - VALUE OPTIMIZATION [AGENT.OPTIMIZATION] +++++++++++++++++\n")
+            print("----------------------------shapes----------------------------")
+            print("actions = ", actions.shape)
+            print("states = ", states.shape)
+            print("q = ", q.shape)
+            print("log_probs = ", log_probs.shape)
+            a = input("\n\nPress Enter to continue...")
         with tf.GradientTape() as value_tape:
-            actions, log_probs = self.actor(states, noisy=False)
-            q1 = self.critic_1(states, actions)
-            q2 = self.critic_2(states, actions)
-            q = tf.minimum(q1, q2)
             v = self.value(states)
-            value_loss = 0.5 * tf.reduce_mean((v - (q-log_probs))**2)
-        variables = self.value.trainable_variables
-        value_grads = value_tape.gradient(value_loss, variables)
-        self.value_optimizer.apply_gradients(zip(value_grads, variables))
+            value_loss = 0.5 * tf.reduce_mean(tf.square(v - (q-log_probs)))
+        value_grads = value_tape.gradient(value_loss, self.value.trainable_variables)
+        self.value_optimizer.apply_gradients(zip(value_grads, self.value.trainable_variables))
 
         # 3° step: optimize critic networks
+        v_tgt = tf.reshape(self.target_value(new_states), -1)
+        q_tgt = [REWARD_SCALE*r for r in rewards] + GAMMA*([not d for d in dones]*v_tgt)
+        if DEBUG_CRITIC_OPTIM:
+            print("\n\n++++++++++++++++ DEBUG - CRITIC OPTIMIZATION [AGENT.OPTIMIZATION] +++++++++++++++++\n")
+            print("----------------------------values----------------------------")
+            print("v target = ", v_tgt)
+            print("q target = ", q_tgt)
+            print("----------------------------operations----------------------------")
+            print("[REWARD_SCALE*r for r in rewards] = ", [REWARD_SCALE*r for r in rewards])
+            print("GAMMA*([not d for d in dones]*v_tgt) = ", GAMMA*([not d for d in dones]*v_tgt))
+            a = input("\n\nPress Enter to continue...")
         with tf.GradientTape() as critic1_tape:
-            v_tgt = self.target_value(new_states)
-            q_tgt = tf.stop_gradient([REWARD_SCALE*r for r in rewards] + 
-                                     GAMMA*([not d for d in dones]*v_tgt))
-            q1 = self.critic_1(states, exp_actions)
-            critic1_loss = 0.5 * tf.reduce_mean((q1 - q_tgt)**2)
+            q1 = tf.reshape(self.critic_1(states, exp_actions), -1)
+            if DEBUG_CRITIC_OPTIM:
+                print("----------------------------values in tape----------------------------")
+                print("q1 = ", q1)
+                print("q_tgt = ", q_tgt)
+                print("q1 - qtgt = ", (q1-q_tgt))
+            critic1_loss = 0.5 * tf.reduce_mean(tf.square(q1 - q_tgt))
         with tf.GradientTape() as critic2_tape:
-            v_tgt = self.target_value(new_states)
-            q_tgt = tf.stop_gradient([REWARD_SCALE*r for r in rewards] + 
-                                     GAMMA*([not d for d in dones]*v_tgt))
-            q2 = self.critic_2(states, exp_actions)
-            critic2_loss = 0.5 * tf.reduce_mean((q2 - q_tgt)**2)
-        variables_c1 = self.critic_1.trainable_variables
-        variables_c2 = self.critic_2.trainable_variables
-        critic1_grads = critic1_tape.gradient(critic1_loss, variables_c1)
-        critic2_grads = critic2_tape.gradient(critic2_loss, variables_c2)
-        self.critic1_optimizer.apply_gradients(zip(critic1_grads, variables_c1))
-        self.critic2_optimizer.apply_gradients(zip(critic2_grads, variables_c2))
+            q2 = tf.reshape(self.critic_2(states, exp_actions), -1)
+            critic2_loss = 0.5 * tf.reduce_mean(tf.square(q2 - q_tgt))
+        critic1_grads = critic1_tape.gradient(critic1_loss, self.critic_1.trainable_variables)
+        critic2_grads = critic2_tape.gradient(critic2_loss, self.critic_2.trainable_variables)
+        self.critic1_optimizer.apply_gradients(zip(critic1_grads, self.critic_1.trainable_variables))
+        self.critic2_optimizer.apply_gradients(zip(critic2_grads, self.critic_2.trainable_variables))
 
         # 4° step: optimize actor network
         with tf.GradientTape() as actor_tape:
@@ -226,9 +251,8 @@ class HER_SAC_Agent:
             q2 = self.critic_2(states, actions)
             q = tf.minimum(q1, q2)
             actor_loss = tf.reduce_mean(log_probs - q)
-        variables = self.actor.trainable_variables
-        actor_grads = actor_tape.gradient(actor_loss, variables)
-        self.actor_optimizer.apply_gradients(zip(actor_grads, variables))
+        actor_grads = actor_tape.gradient(actor_loss, self.actor.trainable_variables)
+        self.actor_optimizer.apply_gradients(zip(actor_grads, self.actor.trainable_variables))
         
         return value_loss, critic1_loss, critic2_loss, actor_loss
 
@@ -257,8 +281,8 @@ class HER_SAC_Agent:
         new_states = self.state_norm.normalize(np.clip(new_states, -CLIP_MAX, CLIP_MAX))
         goals = self.goal_norm.normalize(np.clip(goals, -CLIP_MAX, CLIP_MAX))
         new_goals = self.goal_norm.normalize(np.clip(new_goals, -CLIP_MAX, CLIP_MAX))
-        inputs = np.concatenate([states, goals], axis=1)
-        new_inputs = np.concatenate([new_states, new_goals], axis=1)
+        inputs = np.array(np.concatenate([states, goals], axis=1), ndmin=2)
+        new_inputs = np.array(np.concatenate([new_states, new_goals], axis=1), ndmin=2)
         return inputs, new_inputs
 
     def random_play(self, batch_size):
