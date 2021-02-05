@@ -18,12 +18,12 @@ CRITIC_DENSE_2 = 256
 VALUE_DENSE_1 = 256
 VALUE_DENSE_2 = 256
 
-NOISE = 1e-6
+NOISE = 1e-8
 
 # debug parameters
 DEBUG_ACTOR = False
 DEBUG_VALUE = False
-DEBUG_TARGET = False
+DEBUG_CRITIC = False
 
 
 class ActorNetwork(Model):
@@ -95,6 +95,12 @@ class CriticNetwork(Model):
     def call(self, state, action):
         state_action = tf.concat([state, action], axis=1)
         q_value = self.net(state_action)
+        if DEBUG_CRITIC:
+            print("\n\n\t++++++++++++++++ DEBUG - CRITIC [CRITIC.CALL] +++++++++++++++++\n")
+            print("\t----------------------------shape----------------------------")
+            print("\t", state_action.shape)
+            print("\t----------------------------q----------------------------")
+            print("\t", q_value)
         return q_value
 
 
@@ -113,4 +119,10 @@ class ValueNetwork(Model):
     
     def call(self, state):
         value = self.net(state)
+        if DEBUG_VALUE:
+            print("\n\n\t++++++++++++++++ DEBUG - VALUE [VALUE.CALL] +++++++++++++++++\n")
+            print("\t----------------------------shape----------------------------")
+            print("\t", state.shape)
+            print("\t----------------------------value----------------------------")
+            print("\t", value)
         return value
