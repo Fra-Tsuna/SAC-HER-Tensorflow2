@@ -116,7 +116,6 @@ if __name__ == '__main__':
                 writer.add_scalar("mean_reward", mean_reward, iterations)
 
             ### normalization
-            if DEBUG_HINDSIGHT_EXP:
             agent.update_normalizer(batch=hindsight_experiences, hindsight=True)
 
             ### optimization
