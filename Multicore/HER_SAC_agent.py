@@ -13,13 +13,13 @@ from normalizer import Normalizer
 import os
 from datetime import datetime
 from mpi4py import MPI
-#from mpi_utils import sync_networks, sync_grads
+from mpi_utils import sync_networks, sync_grads
 
 
 # Learning parameters
 REWARD_SCALE = 20
-LEARNING_RATE = 3e-4
-GAMMA = 0.98
+LEARNING_RATE = 0.001
+GAMMA = 0.99
 TAU = 0.005
 NORM_CLIP_RANGE = 5
 CLIP_MAX = 200
@@ -49,10 +49,10 @@ class HER_SAC_Agent:
         self.critic_2 = CriticNetwork(self.critic_state_shape)
         self.value = ValueNetwork(self.normal_state_shape)
         self.target_value = ValueNetwork(self.normal_state_shape)
-        #sync_networks(self.actor)
-        #sync_networks(self.critic_1)
-        #sync_networks(self.critic_2)
-        #sync_networks(self.value)
+        sync_networks(self.actor)
+        sync_networks(self.critic_1)
+        sync_networks(self.critic_2)
+        sync_networks(self.value)
 
         # normalizers
         self.state_norm = Normalizer(size=self.obs_size, clip_range=NORM_CLIP_RANGE)
@@ -150,9 +150,9 @@ class HER_SAC_Agent:
         with tf.GradientTape() as value_tape:
             v = self.value(states)
             value_loss = 0.5 * tf.reduce_mean(tf.square(v - (q-log_probs)))
-        # MUST SYNCH GRADS WITH SYNC_GRADS !!!  # MUST SYNCH GRADS WITH SYNC_GRADS !!!  # MUST SYNCH GRADS WITH SYNC_GRADS !!!  # MUST SYNCH GRADS WITH SYNC_GRADS !!!
         value_grads = value_tape.gradient(value_loss, self.value.trainable_variables)
-        self.value_optimizer.apply_gradients(zip(value_grads, self.value.trainable_variables))
+        value_global_grads = sync_grads(self.value, value_grads)
+        self.value_optimizer.apply_gradients(zip(value_global_grads, self.value.trainable_variables))
 
         # 3° step: optimize critic networks
         v_tgt = tf.reshape(self.target_value(new_states), -1)
@@ -163,11 +163,12 @@ class HER_SAC_Agent:
         with tf.GradientTape() as critic2_tape:
             q2 = tf.reshape(self.critic_2(states, exp_actions), -1)
             critic2_loss = 0.5 * tf.reduce_mean(tf.square(q2 - q_tgt))
-        # MUST SYNCH GRADS WITH SYNC_GRADS !!!  # MUST SYNCH GRADS WITH SYNC_GRADS !!!  # MUST SYNCH GRADS WITH SYNC_GRADS !!!  # MUST SYNCH GRADS WITH SYNC_GRADS !!!
         critic1_grads = critic1_tape.gradient(critic1_loss, self.critic_1.trainable_variables)
         critic2_grads = critic2_tape.gradient(critic2_loss, self.critic_2.trainable_variables)
-        self.critic1_optimizer.apply_gradients(zip(critic1_grads, self.critic_1.trainable_variables))
-        self.critic2_optimizer.apply_gradients(zip(critic2_grads, self.critic_2.trainable_variables))
+        critic1_global_grads = sync_grads(self.critic_1, critic1_grads)
+        critic2_global_grads = sync_grads(self.critic_2, critic2_grads)
+        self.critic1_optimizer.apply_gradients(zip(critic1_global_grads, self.critic_1.trainable_variables))
+        self.critic2_optimizer.apply_gradients(zip(critic2_global_grads, self.critic_2.trainable_variables))
 
         # 4° step: optimize actor network
         with tf.GradientTape() as actor_tape:
@@ -176,9 +177,9 @@ class HER_SAC_Agent:
             q2 = self.critic_2(states, actions)
             q = tf.minimum(q1, q2)
             actor_loss = tf.reduce_mean(log_probs - q)
-        # MUST SYNCH GRADS WITH SYNC_GRADS !!!  # MUST SYNCH GRADS WITH SYNC_GRADS !!!  # MUST SYNCH GRADS WITH SYNC_GRADS !!!  # MUST SYNCH GRADS WITH SYNC_GRADS !!!
         actor_grads = actor_tape.gradient(actor_loss, self.actor.trainable_variables)
-        self.actor_optimizer.apply_gradients(zip(actor_grads, self.actor.trainable_variables))
+        actor_global_grads = sync_grads(self.actor, actor_grads)
+        self.actor_optimizer.apply_gradients(zip(actor_global_grads, self.actor.trainable_variables))
         
         return value_loss, critic1_loss, critic2_loss, actor_loss
 
