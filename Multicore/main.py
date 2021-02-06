@@ -18,6 +18,7 @@ from HER_SAC_agent import HER_SAC_Agent
 
 # Multicore
 from mpi4py import MPI
+import threading
 
 # System libraries
 import os
@@ -26,7 +27,7 @@ import os
 
 
 # environment parameters
-ENV_NAME = "FetchReach-v1"
+ENV_NAME = "FetchPush-v1"
 LOG_DIR = "/home/gianfranco/Desktop/FetchLog"
 
 # training parameters
@@ -46,6 +47,7 @@ FUTURE_K = 4
 
 # learning parameters
 EPSILON_START = 0.5
+EPSILON_NEXT = 0.3
 
 # _____________________________________________________ Main _____________________________________________________ #
 
@@ -54,9 +56,11 @@ if __name__ == '__main__':
 
     # Environment initialization
     env = gym.make(ENV_NAME)
+    os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
     os.environ['OMP_NUM_THREADS'] = '1'
     os.environ['MKL_NUM_THREADS'] = '1'
     os.environ['IN_MPI'] = '1'
+    lock = threading.Lock()
 
     # Agent initialization
     her_buff = HER_Buffer(HER_CAPACITY)
@@ -72,7 +76,7 @@ if __name__ == '__main__':
 
     # Training 
     for epoch in range(TRAINING_EPOCHES):
-        print("\n\n************ TRAINING EPOCH ", epoch, "************\n")
+        print("\n\n___________ TRAINING EPOCH ", epoch, "___________\n")
         reward_vect = []
 
         ## play batch of cycles
@@ -84,13 +88,11 @@ if __name__ == '__main__':
             for policy_step in range(POLICY_STEPS):
                 #print("\t____Policy episode ", policy_step, "____")
                 experiences = agent.play_episode(criterion="SAC", epsilon=epsilon)
-                achieved_goal = experiences[-1].new_state['achieved_goal']
                 goal = experiences[0].state['desired_goal']
                 iterations += len(experiences)
                 for t in range(len(experiences)):
                     reward_vect.append(experiences[t].reward)
                     achieved_goal = experiences[t].new_state['achieved_goal']
-                    #true_reward = agent.env.compute_reward(achieved_goal, goal, None)
                     hindsight_exp = agent.getBuffer().store_experience(experiences[t], 
                                                                     experiences[t].reward, goal)
                     hindsight_experiences.append(hindsight_exp)
@@ -113,14 +115,15 @@ if __name__ == '__main__':
 
                 #### print results
                 mean_reward = np.mean(reward_vect)
-                writer.add_scalar("mean_reward", mean_reward, iterations)
+                #while lock:
+                #    writer.add_scalar("mean_reward", mean_reward, iterations)
 
             ### normalization
             agent.update_normalizer(batch=hindsight_experiences, hindsight=True)
 
             ### optimization
             if len(agent.getBuffer()) >= REPLAY_START_SIZE:
-                epsilon = 0.2
+                epsilon = EPSILON_NEXT
                 for opt_step in range(OPTIMIZATION_STEPS):
                     #print("__Optimization step ", opt_step, "__")
                     minibatch = agent.getBuffer().sample(MINIBATCH_SAMPLE_SIZE)
@@ -138,4 +141,5 @@ if __name__ == '__main__':
             success_rates.append(success_rate)
         success_rate = sum(success_rates) / len(success_rates)
         print("Success_rate = ", success_rate)
-        writer.add_scalar("success rate per epoch", success_rate, epoch)
+        #while lock:
+        #    writer.add_scalar("success rate per epoch", success_rate, epoch)
