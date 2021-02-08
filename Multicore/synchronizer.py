@@ -1,18 +1,19 @@
-from mpi4py import MPI
+#!/usr/bin/env python3
+
+import time
 import numpy as np
 import tensorflow as tf
+from mpi4py import MPI
+
 
 def sync_networks(network):
     variables = network.variables
 
-    # broadcast variables
     if len(variables) > 0:
         comm = MPI.COMM_WORLD
         flat_variables = np.concatenate([np.array(var).flatten() for var in variables])
-        #flat_variables = comm.Bcast(flat_variables, root=0)
         comm.Bcast(flat_variables, root=0)
-
-        # variables reconstruction and assignment
+        
         index = 0
         for var, tgt_var in zip(variables, network.variables):
             shape = np.array(var).shape
@@ -27,13 +28,12 @@ def sync_networks(network):
                 index += shape[0]*shape[1]
             tgt_var.assign(new_var)
 
-def sync_grads(network, gradients):
+def sync_gradients(network, gradients):
     flat_grads = np.concatenate([np.array(grad).flatten() for grad in gradients])
     comm = MPI.COMM_WORLD
     global_grads = np.zeros_like(flat_grads)
     comm.Allreduce(flat_grads, global_grads, op=MPI.SUM)
 
-    # Gradients reconstruction
     index = 0
     new_grads = []
     for grad in gradients:
