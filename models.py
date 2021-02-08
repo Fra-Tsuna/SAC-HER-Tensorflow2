@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 
-
+import time
 import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
-from tensorflow.keras import \
-    Model, Sequential, layers
 from tensorflow.keras.models import clone_model
-import time
+from tensorflow.keras import Model, Sequential, layers
 
 
 # Hyperparameters
@@ -18,10 +16,11 @@ CRITIC_DENSE_2 = 256
 VALUE_DENSE_1 = 256
 VALUE_DENSE_2 = 256
 
-NOISE = 1e-6
+NOISE = 1e-8
 
 
 class ActorNetwork(Model):
+
     def __init__(self, input_dim, action_dim):
         super(ActorNetwork, self).__init__()
         self.input_layer = layers.InputLayer(input_shape=input_dim)
@@ -42,7 +41,8 @@ class ActorNetwork(Model):
         else:
             action_sample = policy.sample()
         squashed_actions = tf.tanh(action_sample)
-        logprob = policy.log_prob(action_sample) - tf.math.log(1.0 - tf.pow(squashed_actions, 2) + NOISE)
+        logprob = (policy.log_prob(action_sample) - 
+                   tf.math.log(1.0 - tf.pow(squashed_actions, 2) + NOISE))
         logprob = tf.reduce_sum(logprob, axis=-1, keepdims=True)
         return squashed_actions, logprob
 
