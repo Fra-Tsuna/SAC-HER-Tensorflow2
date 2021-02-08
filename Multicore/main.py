@@ -3,34 +3,34 @@
 # ___________________________________________________ Libraries ___________________________________________________ #
 
 
-# Learning libraries
-import tensorflow as tf
+# Learning
 import gym
+import tensorflow as tf
 from tensorboardX import SummaryWriter
 
-# Math libraries
-import numpy as np
+# Math 
 import random
+import numpy as np
 
-# Personal libraries
+# Custom libraries
 from HER import HER_Buffer, Experience
 from HER_SAC_agent import HER_SAC_Agent
 
 # Multicore
-from mpi4py import MPI
 import threading
+from mpi4py import MPI
 
-# System libraries
+# System
 import os
 
 # ___________________________________________________ Parameters ___________________________________________________ #
 
 
-# environment parameters
-ENV_NAME = "FetchPush-v1"
+# Environment 
+ENV_NAME = "FetchReach-v1"
 LOG_DIR = "/home/gianfranco/Desktop/FetchLog"
 
-# training parameters
+# Training 
 TRAINING_EPOCHES = 200
 BATCH_SIZE = 50
 OPTIMIZATION_STEPS = 40
@@ -38,14 +38,14 @@ POLICY_STEPS = 2
 RANDOM_EPISODES = 1000
 EVAL_EPISODES = 10
 
-# HER parameters
+# HER 
 HER_CAPACITY = 1000000
 REPLAY_START_SIZE = 1000
 MINIBATCH_SAMPLE_SIZE = 256
 STRATEGY = "future"
 FUTURE_K = 4
 
-# learning parameters
+# Learning parameters
 EPSILON_START = 0.5
 EPSILON_NEXT = 0.3
 
@@ -86,7 +86,6 @@ if __name__ == '__main__':
 
             ### play episodes
             for policy_step in range(POLICY_STEPS):
-                #print("\t____Policy episode ", policy_step, "____")
                 experiences = agent.play_episode(criterion="SAC", epsilon=epsilon)
                 goal = experiences[0].state['desired_goal']
                 iterations += len(experiences)
@@ -111,12 +110,17 @@ if __name__ == '__main__':
                                 agent.env.compute_reward(achieved_goal, desired_goal, None)
                             hindsight_exp = agent.getBuffer().store_experience(experiences[t],
                                                                     her_reward, desired_goal)
-                            hindsight_experiences.append(hindsight_exp)   
+                            hindsight_experiences.append(hindsight_exp)
+                    else:
+                        raise TypeError("Wrong strategy for goal sampling. \
+                                        [available 'final' or 'future']")   
 
                 #### print results
                 mean_reward = np.mean(reward_vect)
-                #while lock:
-                #    writer.add_scalar("mean_reward", mean_reward, iterations)
+                global_mean_reward = MPI.COMM_WORLD.allreduce(mean_reward, op=MPI.SUM)
+                if MPI.COMM_WORLD.Get_rank() == 0:
+                    writer.add_scalar("mean_reward", 
+                        global_mean_reward / MPI.COMM_WORLD.Get_size(), iterations)
 
             ### normalization
             agent.update_normalizer(batch=hindsight_experiences, hindsight=True)
@@ -125,14 +129,14 @@ if __name__ == '__main__':
             if len(agent.getBuffer()) >= REPLAY_START_SIZE:
                 epsilon = EPSILON_NEXT
                 for opt_step in range(OPTIMIZATION_STEPS):
-                    #print("__Optimization step ", opt_step, "__")
                     minibatch = agent.getBuffer().sample(MINIBATCH_SAMPLE_SIZE)
                     v_loss, c1_loss, c2_loss, act_loss = \
                         agent.optimization(minibatch)
                     agent.soft_update()
 
         ## evaluation
-        print("\n\nEVALUATION\n\n")
+        if MPI.COMM_WORLD.Get_rank() == 0:
+            print("\n\nEVALUATION\n\n")
         success_rates = []
         for _ in range(EVAL_EPISODES):
             experiences = agent.play_episode(criterion="SAC", epsilon=0)
@@ -140,6 +144,8 @@ if __name__ == '__main__':
             success_rate = (len(experiences) + total_reward) / len(experiences)
             success_rates.append(success_rate)
         success_rate = sum(success_rates) / len(success_rates)
-        print("Success_rate = ", success_rate)
-        #while lock:
-        #    writer.add_scalar("success rate per epoch", success_rate, epoch)
+        global_success_rate = MPI.COMM_WORLD.allreduce(success_rate, op=MPI.SUM)
+        if MPI.COMM_WORLD.Get_rank() == 0:
+            print("Success_rate = ", global_success_rate / MPI.COMM_WORLD.Get_size())
+            writer.add_scalar("mean success rate per epoch", 
+                global_success_rate / MPI.COMM_WORLD.Get_size(), epoch)
