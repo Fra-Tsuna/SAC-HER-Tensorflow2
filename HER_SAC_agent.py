@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 
-
-from HER import HER_Buffer, Experience
+import random
+import numpy as np
 import tensorflow as tf
 from tensorflow.keras.optimizers import Adam
-import numpy as np
-import random
-from models import ActorNetwork, CriticNetwork, ValueNetwork
 from tensorflow_addons.optimizers import RectifiedAdam
+
 from normalizer import Normalizer
+from HER import HER_Buffer, Experience
+from models import ActorNetwork, CriticNetwork, ValueNetwork
 
 
 # Learning parameters
 REWARD_SCALE = 20
-LEARNING_RATE = 0.001
+LEARNING_RATE = 3e-4
 GAMMA = 0.98
 TAU = 0.005
 NORM_CLIP_RANGE = 5
@@ -28,6 +28,7 @@ class HER_SAC_Agent:
         self.env = env
         self.her_buffer = her_buffer
         self.starting_state = self.env.reset()
+        self.max_timesteps = self.env.spec.max_episode_steps
         self.max_action = self.env.action_space.high[0]
         self.obs_size = self.env.observation_space['observation'].shape[0]
         self.goal_size = self.env.observation_space['desired_goal'].shape[0]
@@ -50,9 +51,9 @@ class HER_SAC_Agent:
         self.goal_norm = Normalizer(size=self.goal_size, clip_range=NORM_CLIP_RANGE)
 
         # building value and target value
-        input = tf.keras.Input(shape=(self.normal_state_shape), dtype=tf.float32)
-        self.value(input)
-        self.target_value(input)
+        input_tensor = tf.keras.Input(shape=(self.normal_state_shape), dtype=tf.float32)
+        self.value(input_tensor)
+        self.target_value(input_tensor)
         self.soft_update(tau = 1.0)
 
         # optimizers
@@ -67,12 +68,13 @@ class HER_SAC_Agent:
             self.critic2_optimizer = RectifiedAdam(LEARNING_RATE)
             self.value_optimizer = RectifiedAdam(LEARNING_RATE)
         else:
-            self.actor_optimizer = None
-            self.critic1_optimizer = None
-            self.critic2_optimizer = None
-            print("Error: wrong or not supported optimizer")
+            raise TypeError("Wrong or not supported optimizer. \
+                            [availiable 'Adam' or 'Rectified_Adam']")
 
     def getBuffer(self):
+        """
+        return the replay buffer of the agent
+        """
         return self.her_buffer
 
     def play_episode(self, criterion="random", epsilon=0):                          
@@ -82,7 +84,7 @@ class HER_SAC_Agent:
         Parameters
         ----------
         criterion: strategy to choose actions ('random' or 'SAC')
-        epsilon: random factor for epsilon-greedy strategy
+        epsilon: random factor for epsilon-greedy exploration strategy
 
         Returns
         -------
@@ -91,9 +93,9 @@ class HER_SAC_Agent:
         state = self.env.reset()
         experiences = []
         done = False
-        step = 0
-        while not done:
-            step += 1
+        t = 0
+        while t < self.max_timesteps:
+            t += 1
             self.env.render()
             if criterion == "random":
                 action = self.env.action_space.sample()
@@ -109,22 +111,24 @@ class HER_SAC_Agent:
                     action, _ = self.actor(obs_goal, noisy=False)
                     action = action.numpy()[0]
             else:
-                raise TypeError("ERROR: Wrong criterion for choosing the action")
+                raise TypeError("Wrong criterion for choosing the action. \
+                                [available 'random' or 'SAC']")
             new_state, reward, done, _ = self.env.step(action)
             experiences.append(Experience(state, action, reward, new_state, done))
             state = new_state
-            #print("\tStep: ", step, "Reward = ", reward)        
         return experiences
 
     def optimization(self, minibatch):
         """
         Update networks in order to learn the correct policy
+
         Parameters
         ----------
         minibatch: sample from the her buffer for the optimization
+
         Returns
         -------
-        *_loss: loss of the correspondent network
+        losses of all optimization processes
         """
         # 1° step: unzip minibatch sampled from HER
         exp_actions, rewards, dones = [], [], []
@@ -133,40 +137,34 @@ class HER_SAC_Agent:
             rewards.append(exp.reward)
             dones.append(exp.done)
         states, new_states = self.preprocess_inputs(minibatch)
-        states = np.array(states, ndmin=2)
-        new_states = np.array(new_states, ndmin=2)
 
         # 2° step: optimize value network
+        actions, log_probs = self.actor(states, noisy=False)
+        q1 = self.critic_1(states, actions)
+        q2 = self.critic_2(states, actions)
+        q = tf.minimum(q1, q2)
         with tf.GradientTape() as value_tape:
-            actions, log_probs = self.actor(states, noisy=False)
-            q1 = self.critic_1(states, actions)
-            q2 = self.critic_2(states, actions)
-            q = tf.minimum(q1, q2)
             v = self.value(states)
-            value_loss = 0.5 * tf.reduce_mean((v - (q-log_probs))**2)
-        variables = self.value.trainable_variables
-        value_grads = value_tape.gradient(value_loss, variables)
-        self.value_optimizer.apply_gradients(zip(value_grads, variables))
+            value_loss = 0.5 * tf.reduce_mean(tf.square(v - (q-log_probs)))
+        value_grads = value_tape.gradient(value_loss, self.value.trainable_variables)
+        self.value_optimizer.apply_gradients(
+            zip(value_grads, self.value.trainable_variables))
 
         # 3° step: optimize critic networks
+        v_tgt = tf.reshape(self.target_value(new_states), -1)
+        q_tgt = [REWARD_SCALE*r for r in rewards] + GAMMA*([not d for d in dones]*v_tgt)
         with tf.GradientTape() as critic1_tape:
-            v_tgt = self.target_value(new_states)
-            q_tgt = tf.stop_gradient([REWARD_SCALE*r for r in rewards] + 
-                                     GAMMA*([not d for d in dones]*v_tgt))
-            q1 = self.critic_1(states, exp_actions)
-            critic1_loss = 0.5 * tf.reduce_mean((q1 - q_tgt)**2)
+            q1 = tf.reshape(self.critic_1(states, exp_actions), -1)
+            critic1_loss = 0.5 * tf.reduce_mean(tf.square(q1 - q_tgt))
         with tf.GradientTape() as critic2_tape:
-            v_tgt = self.target_value(new_states)
-            q_tgt = tf.stop_gradient([REWARD_SCALE*r for r in rewards] + 
-                                     GAMMA*([not d for d in dones]*v_tgt))
-            q2 = self.critic_2(states, exp_actions)
-            critic2_loss = 0.5 * tf.reduce_mean((q2 - q_tgt)**2)
-        variables_c1 = self.critic_1.trainable_variables
-        variables_c2 = self.critic_2.trainable_variables
-        critic1_grads = critic1_tape.gradient(critic1_loss, variables_c1)
-        critic2_grads = critic2_tape.gradient(critic2_loss, variables_c2)
-        self.critic1_optimizer.apply_gradients(zip(critic1_grads, variables_c1))
-        self.critic2_optimizer.apply_gradients(zip(critic2_grads, variables_c2))
+            q2 = tf.reshape(self.critic_2(states, exp_actions), -1)
+            critic2_loss = 0.5 * tf.reduce_mean(tf.square(q2 - q_tgt))
+        critic1_grads = critic1_tape.gradient(critic1_loss, self.critic_1.trainable_variables)
+        critic2_grads = critic2_tape.gradient(critic2_loss, self.critic_2.trainable_variables)
+        self.critic1_optimizer.apply_gradients(
+            zip(critic1_grads, self.critic_1.trainable_variables))
+        self.critic2_optimizer.apply_gradients(
+            zip(critic2_grads, self.critic_2.trainable_variables))
 
         # 4° step: optimize actor network
         with tf.GradientTape() as actor_tape:
@@ -175,17 +173,32 @@ class HER_SAC_Agent:
             q2 = self.critic_2(states, actions)
             q = tf.minimum(q1, q2)
             actor_loss = tf.reduce_mean(log_probs - q)
-        variables = self.actor.trainable_variables
-        actor_grads = actor_tape.gradient(actor_loss, variables)
-        self.actor_optimizer.apply_gradients(zip(actor_grads, variables))
+        actor_grads = actor_tape.gradient(actor_loss, self.actor.trainable_variables)
+        self.actor_optimizer.apply_gradients(
+            zip(actor_grads, self.actor.trainable_variables))
         
         return value_loss, critic1_loss, critic2_loss, actor_loss
 
     def soft_update(self, tau=TAU):
+        """
+        Target value soft update
+
+        Parameters
+        ----------
+        tau: weight for the value parameters to do the soft update
+        """
         for source, target in zip(self.value.variables, self.target_value.variables):
             target.assign((1.0 - tau) * target + tau * source)
 
     def update_normalizer(self, batch, hindsight=False):
+        """
+        Update normalizer parameters
+
+        Parameters
+        ----------
+        batch: batch of experiences for the updating
+        hindsight: True if the experiences are in the HER representation
+        """
         if not hindsight:
             obs = [exp.state['observation'] for exp in batch]
             g = [exp.state['desired_goal'] for exp in batch]
@@ -194,8 +207,19 @@ class HER_SAC_Agent:
             g = [exp.state[-self.goal_size:] for exp in batch] 
         self.state_norm.update(np.clip(obs, -CLIP_MAX, CLIP_MAX))
         self.goal_norm.update(np.clip(g, -CLIP_MAX, CLIP_MAX))
-
+        
     def preprocess_inputs(self, her_batch):
+        """
+        Normalize states, goals and re-convert into HER representation
+        
+        Parameters
+        ----------
+        her_batch: batch of experiences expressed in the HER representation
+
+        Returns
+        -------
+        input tensor for the networks
+        """
         states, new_states, goals, new_goals = [], [], [], []
         for i in range(len(her_batch)):
             states.append(her_batch[i].state[0:-self.goal_size])
@@ -206,8 +230,8 @@ class HER_SAC_Agent:
         new_states = self.state_norm.normalize(np.clip(new_states, -CLIP_MAX, CLIP_MAX))
         goals = self.goal_norm.normalize(np.clip(goals, -CLIP_MAX, CLIP_MAX))
         new_goals = self.goal_norm.normalize(np.clip(new_goals, -CLIP_MAX, CLIP_MAX))
-        inputs = np.concatenate([states, goals], axis=1)
-        new_inputs = np.concatenate([new_states, new_goals], axis=1)
+        inputs = np.array(np.concatenate([states, goals], axis=1), ndmin=2)
+        new_inputs = np.array(np.concatenate([new_states, new_goals], axis=1), ndmin=2)
         return inputs, new_inputs
 
     def random_play(self, batch_size):
