@@ -7,7 +7,7 @@ from tensorflow.keras.optimizers import Adam
 from tensorflow_addons.optimizers import RectifiedAdam
 
 from mpi4py import MPI
-from mpi_utils import sync_networks, sync_gradients
+from synchronizer import sync_networks, sync_gradients
 
 from normalizer import Normalizer
 from HER import HER_Buffer, Experience
