@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
 
-
-import numpy as np
-from collections import namedtuple, deque
-import tensorflow as tf
 import time
+import numpy as np
+import tensorflow as tf
+from collections import namedtuple, deque
 
 
 """ 
 Structure of a single Experience
-N.B: state can be anything (observation, dictionary, ecc.), but
-     the exp. stored in the HER buffer should have as state the observation
-     concatenated with the goal
+N.B: the exp. stored in the HER buffer should have as state (new state) 
+     the observation (new observation) concatenated with the goal
 """
 Experience = namedtuple("Experience", field_names = \
     ['state', 'action', 'reward', 'new_state', 'done'])
@@ -26,14 +24,6 @@ class HER_Buffer:
         return len(self.buffer)
 
     def append(self, exp):
-        """
-        Insert new element to the buffer (if full, old memory is dropped)
-
-        Parameters
-        ----------
-        exp: experience to store = [state_goal, action, reward, newState_goal, done]
-            N.B: _ denotes concatenation
-        """
         self.buffer.append(exp)
 
     def store_experience(self, experience, reward, goal):
@@ -45,12 +35,19 @@ class HER_Buffer:
         experience: experience to store
         reward: the reward computed in the agent's env
         goal: the goal to concatenate to the states
+
+        Return
+        -------
+        hindsight_exp: experience in the hindsight representation:
+            (state||goal, action, reward, new_state||goal, done).
+            N.B: || denotes concatenation
         """
-        hindsight_exp = self._hindsight_representation(experience, reward, goal)
+        hindsight_exp = \
+            self._hindsight_representation(experience, reward, goal)
         self.buffer.append(hindsight_exp)
         return hindsight_exp
 
-    def sample(self, minibatch=1):
+    def sample(self, minibatch_size=1):
         """
         Sample items from the buffer
 
@@ -58,27 +55,28 @@ class HER_Buffer:
         ----------
         minibatch: number of items to sample from the buffer
 
-        Returns
+        Return
         -------
-        items: items sampled from the buffer
+        items: hindsight experiences sampled from the buffer
         """
-        locations = np.random.choice(len(self.buffer), minibatch, replace=False)            
+        items = []
+        locations = np.random.choice(len(self.buffer), 
+                        minibatch_size, replace=False)
         if minibatch == 1:
             items = self.buffer[locations[0]]
         else:
-            items = []
             for index in locations:
                 items.append(self.buffer[index])
         return items
 
     def _hindsight_representation(self, experience, reward, goal):
         """
-        Convert the experience in input into the her canonical representation
+        Convert the passed experience to the HER canonical representation
         
         Parameters
         ----------
         experience: experience to convert
-        goal: the goal obtained with the opportune strategy
+        goal: the goal obtained with any sampling strategy
         
         Return
         ------
