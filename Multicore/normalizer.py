@@ -11,7 +11,8 @@ NORMALIZATION = "Gaussian"
 
 
 class Normalizer:
-    def __init__(self, size, eps=1e-2, clip_range=np.inf, normalization=NORMALIZATION):
+    def __init__(self, size, eps=1e-2, clip_range=np.inf, 
+                 normalization=NORMALIZATION):
         self.size = size
         self.eps = eps
         self.clip_range = clip_range
@@ -68,14 +69,17 @@ class Normalizer:
                 self.local_sum[...] = 0
                 self.local_sumsq[...] = 0
             # synrc the stats
-            sync_sum, sync_sumsq, sync_count = self.sync(local_sum, local_sumsq, local_count)
+            sync_sum, sync_sumsq, sync_count = \
+                self.sync(local_sum, local_sumsq, local_count)
             # update the total stuff
             self.total_sum += sync_sum
             self.total_sumsq += sync_sumsq
             self.total_count += sync_count
             # calculate the new mean and std
             self.mean = self.total_sum / self.total_count
-            self.std = np.sqrt(np.maximum(np.square(self.eps), (self.total_sumsq / self.total_count) - np.square(self.total_sum / self.total_count)))
+            self.std = np.sqrt(np.maximum(np.square(self.eps), 
+                               (self.total_sumsq / self.total_count) - 
+                               np.square(self.total_sum / self.total_count)))
         
     def normalize(self, vector, clip_range=None):
         if clip_range is None:
