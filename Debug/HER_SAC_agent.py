@@ -1,25 +1,25 @@
 #!/usr/bin/env python3
 
-
-from HER import HER_Buffer, Experience
+import random
+import numpy as np
 import tensorflow as tf
 from tensorflow.keras.optimizers import Adam
-import numpy as np
-import random
-from models import ActorNetwork, CriticNetwork, ValueNetwork
 from tensorflow_addons.optimizers import RectifiedAdam
+
 from normalizer import Normalizer
+from HER import HER_Buffer, Experience
+from models import ActorNetwork, CriticNetwork, ValueNetwork
 
 
 # Learning parameters
-REWARD_SCALE = 20
-LEARNING_RATE = 3e-4
+REWARD_SCALE = 20                            
+LEARNING_RATE = 0.001
 GAMMA = 0.98
 TAU = 0.005
 NORM_CLIP_RANGE = 5
 CLIP_MAX = 200
 
-# debug parameters
+# Debug parameters
 DEBUG_STATE = False
 DEBUG_ACTION = False
 DEBUG_LAST_EXP = False
@@ -28,7 +28,7 @@ DEBUG_NORM_SAMPLE = False
 DEBUG_REW_ACT_DONE = False
 DEBUG_VALUE_OPTIM = False
 DEBUG_CRITIC_OPTIM = False
-DEBUG_ACTOR_OPTIM = True
+DEBUG_ACTOR_OPTIM = False
 
 
 class HER_SAC_Agent:
@@ -39,6 +39,7 @@ class HER_SAC_Agent:
         self.env = env
         self.her_buffer = her_buffer
         self.starting_state = self.env.reset()
+        self.max_timesteps = self.env.spec.max_episode_steps
         self.max_action = self.env.action_space.high[0]
         self.obs_size = self.env.observation_space['observation'].shape[0]
         self.goal_size = self.env.observation_space['desired_goal'].shape[0]
@@ -61,9 +62,9 @@ class HER_SAC_Agent:
         self.goal_norm = Normalizer(size=self.goal_size, clip_range=NORM_CLIP_RANGE)
 
         # building value and target value
-        input = tf.keras.Input(shape=(self.normal_state_shape), dtype=tf.float32)
-        self.value(input)
-        self.target_value(input)
+        input_tensor = tf.keras.Input(shape=(self.normal_state_shape), dtype=tf.float32)
+        self.value(input_tensor)
+        self.target_value(input_tensor)
         self.soft_update(tau = 1.0)
 
         # optimizers
@@ -78,12 +79,13 @@ class HER_SAC_Agent:
             self.critic2_optimizer = RectifiedAdam(LEARNING_RATE)
             self.value_optimizer = RectifiedAdam(LEARNING_RATE)
         else:
-            self.actor_optimizer = None
-            self.critic1_optimizer = None
-            self.critic2_optimizer = None
-            print("Error: wrong or not supported optimizer")
+            raise TypeError("Wrong or not supported optimizer. \
+                            [availiable 'Adam' or 'Rectified_Adam']")
 
     def getBuffer(self):
+        """
+        return the replay buffer of the agent
+        """
         return self.her_buffer
 
     def play_episode(self, criterion="random", epsilon=0):                          
@@ -93,7 +95,8 @@ class HER_SAC_Agent:
         Parameters
         ----------
         criterion: strategy to choose actions ('random' or 'SAC')
-        epsilon: random factor for epsilon-greedy strategy
+        epsilon: random factor for epsilon-greedy exploration strategy
+
         Returns
         -------
         experiences: all experiences taken by the agent in the episode
@@ -101,14 +104,10 @@ class HER_SAC_Agent:
         state = self.env.reset()
         experiences = []
         done = False
-        step = 0
-        while not done:
-            step += 1
-            self.env.render()
-            if DEBUG_STATE:
-                print("++++++++++++++++ DEBUG - STATE [AGENT.PLAY_EPISODE] ++++++++++++++++\n")
-                print("----------------------------state----------------------------")
-                print(state)
+        t = 0
+        while t < self.max_timesteps and not done:
+            t += 1
+            #self.env.render()
             if criterion == "random":
                 action = self.env.action_space.sample()
             elif criterion == "SAC":
@@ -121,15 +120,19 @@ class HER_SAC_Agent:
                         np.concatenate([obs_norm, goal_norm])
                     obs_goal = np.array(obs_goal, ndmin=2)
                     if DEBUG_STATE:
+                        print("++++++++++++++++ DEBUG - STATE [AGENT.PLAY_EPISODE] ++++++++++++++++\n")
+                        print("----------------------------state----------------------------")
+                        print(state)
                         print("----------------------------obs_norm||goal----------------------------")
                         print(obs_goal)
+                        a = input("\n\nPress Enter to continue...")
                     action, _ = self.actor(obs_goal, noisy=False)
                     action = action.numpy()[0]
             else:
-                print("ERROR: Wrong criterion for choosing the action")
-            if DEBUG_STATE:
-                a = input("\n\nPress Enter to continue...")
-            new_state, reward, done, _ = self.env.step(action)
+                raise TypeError("Wrong criterion for choosing the action. \
+                                [available 'random' or 'SAC']")                
+            new_state, reward, done, info = self.env.step(action)
+            done = done or bool(info['is_success'])
             experiences.append(Experience(state, action, reward, new_state, done))
             if DEBUG_ACTION:
                 print("\n\n++++++++++++++++ DEBUG - TAKE ACTION [AGENT.PLAY_EPISODE] +++++++++++++++++\n")
@@ -140,12 +143,10 @@ class HER_SAC_Agent:
                 print("----------------------------reward----------------------------")
                 print(reward)
                 print("----------------------------done----------------------------")
-                print(done)
                 print("----------------------------experience appended----------------------------")
                 print(experiences[0])
                 a = input("\n\nPress Enter to continue...")
             state = new_state
-            #print("\tStep: ", step, "Reward = ", reward)        
         if DEBUG_LAST_EXP:
             print("\n\n++++++++++++++++ DEBUG - LAST EXPERIENCE [AGENT.PLAY_EPISODE] +++++++++++++++++\n")
             print(experiences[-1])
@@ -157,12 +158,14 @@ class HER_SAC_Agent:
     def optimization(self, minibatch):
         """
         Update networks in order to learn the correct policy
+
         Parameters
         ----------
         minibatch: sample from the her buffer for the optimization
+
         Returns
         -------
-        *_loss: loss of the correspondent network
+        losses of all optimization processes
         """
         # 1° step: unzip minibatch sampled from HER
         exp_actions, rewards, dones = [], [], []
@@ -171,7 +174,6 @@ class HER_SAC_Agent:
             rewards.append(exp.reward)
             dones.append(exp.done)
         states, new_states = self.preprocess_inputs(minibatch)
-
         if DEBUG_NORM_SAMPLE:
             print("\n\n++++++++++++++++ DEBUG - HER NORM STATES/GOAL [AGENT.OPTIMIZATION] +++++++++++++++++\n")
             print("----------------------------element 0----------------------------")
@@ -195,7 +197,7 @@ class HER_SAC_Agent:
             print(exp_actions)
             print("----------------------------dones----------------------------")
             print(dones)
-            a = input("\n\nPress Enter to continue...") 
+            a = input("\n\nPress Enter to continue...")
 
         # 2° step: optimize value network
         actions, log_probs = self.actor(states, noisy=False)
@@ -214,7 +216,8 @@ class HER_SAC_Agent:
             v = self.value(states)
             value_loss = 0.5 * tf.reduce_mean(tf.square(v - (q-log_probs)))
         value_grads = value_tape.gradient(value_loss, self.value.trainable_variables)
-        self.value_optimizer.apply_gradients(zip(value_grads, self.value.trainable_variables))
+        self.value_optimizer.apply_gradients(
+            zip(value_grads, self.value.trainable_variables))
 
         # 3° step: optimize critic networks
         v_tgt = tf.reshape(self.target_value(new_states), -1)
@@ -241,8 +244,10 @@ class HER_SAC_Agent:
             critic2_loss = 0.5 * tf.reduce_mean(tf.square(q2 - q_tgt))
         critic1_grads = critic1_tape.gradient(critic1_loss, self.critic_1.trainable_variables)
         critic2_grads = critic2_tape.gradient(critic2_loss, self.critic_2.trainable_variables)
-        self.critic1_optimizer.apply_gradients(zip(critic1_grads, self.critic_1.trainable_variables))
-        self.critic2_optimizer.apply_gradients(zip(critic2_grads, self.critic_2.trainable_variables))
+        self.critic1_optimizer.apply_gradients(
+            zip(critic1_grads, self.critic_1.trainable_variables))
+        self.critic2_optimizer.apply_gradients(
+            zip(critic2_grads, self.critic_2.trainable_variables))
 
         # 4° step: optimize actor network
         with tf.GradientTape() as actor_tape:
@@ -252,15 +257,31 @@ class HER_SAC_Agent:
             q = tf.minimum(q1, q2)
             actor_loss = tf.reduce_mean(log_probs - q)
         actor_grads = actor_tape.gradient(actor_loss, self.actor.trainable_variables)
-        self.actor_optimizer.apply_gradients(zip(actor_grads, self.actor.trainable_variables))
+        self.actor_optimizer.apply_gradients(
+            zip(actor_grads, self.actor.trainable_variables))
         
         return value_loss, critic1_loss, critic2_loss, actor_loss
 
     def soft_update(self, tau=TAU):
+        """
+        Target value soft update
+
+        Parameters
+        ----------
+        tau: weight for the value parameters to do the soft update
+        """
         for source, target in zip(self.value.variables, self.target_value.variables):
             target.assign((1.0 - tau) * target + tau * source)
 
     def update_normalizer(self, batch, hindsight=False):
+        """
+        Update normalizer parameters
+
+        Parameters
+        ----------
+        batch: batch of experiences for the updating
+        hindsight: True if the experiences are in the HER representation
+        """
         if not hindsight:
             obs = [exp.state['observation'] for exp in batch]
             g = [exp.state['desired_goal'] for exp in batch]
@@ -271,6 +292,17 @@ class HER_SAC_Agent:
         self.goal_norm.update(np.clip(g, -CLIP_MAX, CLIP_MAX))
 
     def preprocess_inputs(self, her_batch):
+        """
+        Normalize states, goals and re-convert into HER representation
+        
+        Parameters
+        ----------
+        her_batch: batch of experiences expressed in the HER representation
+
+        Returns
+        -------
+        input tensor for the networks
+        """
         states, new_states, goals, new_goals = [], [], [], []
         for i in range(len(her_batch)):
             states.append(her_batch[i].state[0:-self.goal_size])
