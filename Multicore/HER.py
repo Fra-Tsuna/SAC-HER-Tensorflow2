@@ -65,7 +65,7 @@ class HER_Buffer:
         locations = np.random.choice(len(self.buffer), 
                         minibatch_size, replace=False)
         with self.lock:
-            if minibatch == 1:
+            if minibatch_size == 1:
                 items = self.buffer[locations[0]]
             else:
                 items = []
