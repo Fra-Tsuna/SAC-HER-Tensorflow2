@@ -16,31 +16,33 @@ import numpy as np
 from HER import HER_Buffer, Experience
 from HER_SAC_agent import HER_SAC_Agent
 
+# System
+import os
+
 # ___________________________________________________ Parameters ___________________________________________________ #
 
 
 # Environment 
-ENV_NAME = "FetchReach-v1"
+ENV_NAME = "FetchPush-v1"
 LOG_DIR = "/home/gianfranco/Desktop/FetchLog"
 
 # Training 
 TRAINING_EPOCHES = 200
 BATCH_SIZE = 50
-OPTIMIZATION_STEPS = 40
-POLICY_STEPS = 2
-RANDOM_EPISODES = 1000
+CYCLE_EPISODES = 1
+TRAINING_START_STEPS = 1000
+OPTIMIZATION_STEPS = 50
 EVAL_EPISODES = 10
 
 # HER 
 HER_CAPACITY = 1000000
-REPLAY_START_SIZE = 1000
 MINIBATCH_SAMPLE_SIZE = 256
 STRATEGY = "future"
 FUTURE_K = 4
 
 # Learning parameters
-EPSILON_START = 0.5
-EPSILON_NEXT = 0.1
+EPSILON_START = 1.
+EPSILON_NEXT = 0.001
 
 # _____________________________________________________ Main _____________________________________________________ #
 
@@ -64,19 +66,21 @@ if __name__ == '__main__':
 
     # Training 
     for epoch in range(TRAINING_EPOCHES):
-        print("\n\n___________ TRAINING EPOCH ", epoch, "___________\n")
+        #print("\n\n___________ TRAINING EPOCH ", epoch, "___________\n")
         reward_vect = []
 
         ## play batch of cycles
         for cycle in range(BATCH_SIZE):
             print("Epoch ", epoch, "- Cycle ", cycle)
             hindsight_experiences = []
+            played_experiences = 0
 
             ### play episodes
-            for policy_step in range(POLICY_STEPS):
+            for episode in range(CYCLE_EPISODES):
                 experiences = agent.play_episode(criterion="SAC", epsilon=epsilon)
                 goal = experiences[0].state['desired_goal']
                 iterations += len(experiences)
+                played_experiences += len(experiences)
                 for t in range(len(experiences)):
                     reward_vect.append(experiences[t].reward)
                     achieved_goal = experiences[t].new_state['achieved_goal']
@@ -100,9 +104,9 @@ if __name__ == '__main__':
                                                                     her_reward, desired_goal)
                             hindsight_experiences.append(hindsight_exp)
                     else:
-                        raise TypeError("Wrong strategy for goal sampling. \
-                                        [available 'final' or 'future']")   
-
+                        raise TypeError("Wrong strategy for goal sampling." +
+                                        " [available 'final', 'future']")   
+                        
                 #### print results
                 mean_reward = np.mean(reward_vect)
                 writer.add_scalar("mean_reward", mean_reward, iterations)
@@ -111,13 +115,13 @@ if __name__ == '__main__':
             agent.update_normalizer(batch=hindsight_experiences, hindsight=True)
 
             ### optimization
-            if len(agent.getBuffer()) >= REPLAY_START_SIZE:
+            if iterations >= TRAINING_START_STEPS:
                 epsilon = EPSILON_NEXT
-                for opt_step in range(OPTIMIZATION_STEPS):
-                    minibatch = agent.getBuffer().sample(MINIBATCH_SAMPLE_SIZE)
-                    v_loss, c1_loss, c2_loss, act_loss = \
-                        agent.optimization(minibatch)
+                for opt_step in range(min(played_experiences, OPTIMIZATION_STEPS)):
+                    v_loss, c1_loss, c2_loss, act_loss, temp_loss = \
+                        agent.optimization()
                     agent.soft_update()
+            print("\tTemperature: ", agent.getTemperature())
 
         ## evaluation
         print("\n\nEVALUATION\n\n")
