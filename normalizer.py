@@ -30,18 +30,17 @@ class Normalizer:
             raise TypeError("Wrong normalization type")
 
     def update(self, buffer):
-        with self.lock:
-            if self.normalization == "Gaussian":
-                self.local_sum += buffer.sum(axis=0)
-                self.local_sumsq += (np.square(buffer)).sum(axis=0)
-                self.local_count[0] += buffer.shape[0]
-                self.mean = self.local_sum / self.local_count
-                self.std = np.sqrt(np.maximum(np.square(self.eps), 
-                                             (self.local_sumsq / self.local_count) - 
-                                              np.square(self.local_sum / self.local_count)))
-            elif self.normalization == "MinMax":
-                self.min = np.minimum(self.min, buffer.min(axis=0))
-                self.max = np.maximum(self.max, buffer.max(axis=0))
+        if self.normalization == "Gaussian":
+            self.local_sum += buffer.sum(axis=0)
+            self.local_sumsq += (np.square(buffer)).sum(axis=0)
+            self.local_count[0] += buffer.shape[0]
+            self.mean = self.local_sum / self.local_count
+            self.std = np.sqrt(np.maximum(np.square(self.eps), 
+                                          (self.local_sumsq / self.local_count) - 
+                                          np.square(self.local_sum / self.local_count)))
+        elif self.normalization == "MinMax":
+            self.min = np.minimum(self.min, buffer.min(axis=0))
+            self.max = np.maximum(self.max, buffer.max(axis=0))
         
     def normalize(self, vector, clip_range=None):
         if clip_range is None:
