@@ -16,7 +16,7 @@ CRITIC_DENSE_2 = 256
 VALUE_DENSE_1 = 256
 VALUE_DENSE_2 = 256
 
-NOISE = 1e-8
+NOISE = 1e-6
 
 # debug parameters
 DEBUG_ACTOR = False
@@ -43,7 +43,6 @@ class ActorNetwork(Model):
         noise = tfp.distributions.Normal(0,1).sample()
         if DEBUG_ACTOR:
             print("\n\n\t++++++++++++++++ DEBUG - ACTOR NET [ACTOR.CALL]++++++++++++++++\n")
-            time.sleep(1)
             print("\t----------------------------input_actor----------------------------")
             print("\t", state)
             print("\t----------------------------mean----------------------------")
