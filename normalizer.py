@@ -37,7 +37,7 @@ class Normalizer:
             self.mean = self.local_sum / self.local_count
             self.std = np.sqrt(np.maximum(np.square(self.eps), 
                                           (self.local_sumsq / self.local_count) - 
-                                          np.square(self.local_sum / self.local_count)))
+                                           np.square(self.local_sum / self.local_count)))
         elif self.normalization == "MinMax":
             self.min = np.minimum(self.min, buffer.min(axis=0))
             self.max = np.maximum(self.max, buffer.max(axis=0))
