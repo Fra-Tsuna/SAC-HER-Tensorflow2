@@ -44,6 +44,28 @@ FUTURE_K = 4
 EPSILON_START = 1.
 EPSILON_NEXT = 0.001
 
+# ____________________________________________________ Classes ____________________________________________________ #
+
+
+class DoneOnSuccessWrapper(gym.Wrapper):
+    """
+    Reset on success and offsets the reward.
+    Useful for GoalEnv.
+    """
+    def __init__(self, env, reward_offset=1.0):
+        super(DoneOnSuccessWrapper, self).__init__(env)
+        self.reward_offset = reward_offset
+
+    def step(self, action):
+        obs, reward, done, info = self.env.step(action)
+        done = done or info.get('is_success', False)
+        reward += self.reward_offset
+        return obs, reward, done, info
+
+    def compute_reward(self, achieved_goal, desired_goal, info):
+        reward = self.env.compute_reward(achieved_goal, desired_goal, info)
+        return reward + self.reward_offset
+
 # _____________________________________________________ Main _____________________________________________________ #
 
 
@@ -51,10 +73,11 @@ if __name__ == '__main__':
 
     # Environment initialization
     env = gym.make(ENV_NAME)
+    env = DoneOnSuccessWrapper(env)
 
     # Agent initialization
     her_buff = HER_Buffer(HER_CAPACITY)
-    agent = HER_SAC_Agent(env, her_buff)
+    agent = HER_SAC_Agent(env, her_buff, temperature=0.03)
 
     # Summary writer for live trends
     writer = SummaryWriter(log_dir=LOG_DIR, comment="NoComment")
@@ -118,10 +141,10 @@ if __name__ == '__main__':
             if iterations >= TRAINING_START_STEPS:
                 epsilon = EPSILON_NEXT
                 for opt_step in range(min(played_experiences, OPTIMIZATION_STEPS)):
-                    v_loss, c1_loss, c2_loss, act_loss, temp_loss = \
+                    v_loss, c1_loss, c2_loss, act_loss = \
                         agent.optimization()
                     agent.soft_update()
-            print("\tTemperature: ", agent.getTemperature())
+            #print("\tTemperature: ", agent.getTemperature())
 
         ## evaluation
         print("\n\nEVALUATION\n\n")
@@ -129,7 +152,7 @@ if __name__ == '__main__':
         for _ in range(EVAL_EPISODES):
             experiences = agent.play_episode(criterion="SAC", epsilon=0)
             total_reward = sum([exp.reward for exp in experiences])
-            success_rate = (len(experiences) + total_reward) / len(experiences)
+            success_rate = total_reward / len(experiences)
             success_rates.append(success_rate)
         success_rate = sum(success_rates) / len(success_rates)
         print("Success_rate = ", success_rate)
