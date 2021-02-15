@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import time
+import random
 import numpy as np
 import tensorflow as tf
 from collections import namedtuple, deque
@@ -13,12 +14,13 @@ N.B: the exp. stored in the HER buffer should have as state (new state)
 """
 Experience = namedtuple("Experience", field_names = \
     ['state', 'action', 'reward', 'new_state', 'done'])
-
+    
 
 class HER_Buffer:
 
     def __init__(self, capacity):
         self.buffer = deque(maxlen=capacity)
+        random.seed()
 
     def __len__(self):
         return len(self.buffer)
@@ -47,26 +49,28 @@ class HER_Buffer:
         self.buffer.append(hindsight_exp)
         return hindsight_exp
 
-    def sample(self, minibatch_size=1):
+    def sample(self, minibatch_size=1, ere_ck=None):
         """
         Sample items from the buffer
 
         Parameters
         ----------
         minibatch: number of items to sample from the buffer
+        ere_ck: parameter ck of ERE algorithm which control sampling range
 
         Return
         -------
         items: hindsight experiences sampled from the buffer
         """
         items = []
-        locations = np.random.choice(len(self.buffer), 
-                        minibatch_size, replace=False)
-        if minibatch_size == 1:
-            items = self.buffer[locations[0]]
+        if ere_ck is None or ere_ck > len(self.buffer):
+            sample_range = len(self.buffer)
         else:
-            for index in locations:
-                items.append(self.buffer[index])
+            sample_range = int(ere_ck)
+        locations = random.sample(
+            range((len(self.buffer)-sample_range), len(self.buffer)), minibatch_size)
+        for index in locations:
+            items.append(self.buffer[index])
         return items
 
     def _hindsight_representation(self, experience, reward, goal):
