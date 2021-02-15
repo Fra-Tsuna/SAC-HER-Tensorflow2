@@ -17,6 +17,8 @@ VALUE_DENSE_1 = 256
 VALUE_DENSE_2 = 256
 
 NOISE = 1e-6
+LOG_STD_MIN = -20
+LOG_STD_MAX = 2
 
 # debug parameters
 DEBUG_ACTOR = False
@@ -38,8 +40,9 @@ class ActorNetwork(Model):
         x = self.layer_2(self.layer_1(self.input_layer(state)))
         mean = self.mean(x)
         log_std = self.log_std_dev(x)
-        log_std_clipped = tf.clip_by_value(log_std, NOISE, 1)
-        policy = tfp.distributions.Normal(mean, tf.exp(log_std_clipped))
+        log_std_clipped = tf.clip_by_value(log_std, LOG_STD_MIN, LOG_STD_MAX)
+        std_dev = tf.exp(log_std_clipped)
+        policy = tfp.distributions.Normal(mean, std_dev)
         noise = tfp.distributions.Normal(0,1).sample()
         if DEBUG_ACTOR:
             print("\n\n\t++++++++++++++++ DEBUG - ACTOR NET [ACTOR.CALL]++++++++++++++++\n")
@@ -54,7 +57,7 @@ class ActorNetwork(Model):
             print("\t----------------------------noise----------------------------")
             print("\t", noise)
         if noisy:
-            action_sample = mean + noise*tf.exp(log_std_clipped)
+            action_sample = mean + noise*std_dev
             if DEBUG_ACTOR:
                 print("\t----------------------------action noisy----------------------------")
         else:
@@ -67,11 +70,15 @@ class ActorNetwork(Model):
             print("\t", action_sample)
             print("\t----------------------------squashed action----------------------------")
             print("\t", squashed_actions)
-            print("\t----------------------------log probs before sum----------------------------")
+            print("\t----------------------------policy.log_prob----------------------------")
+            print("\t", policy.log_prob(action_sample))
+            print("\t----------------------------tf.math.log(1.0 - tf.pow(squashed_actions, 2) + NOISE----------------------------")
+            print("\t", tf.reduce_sum(tf.math.log(1.0 - squashed_actions**2 + NOISE), axis=1, keepdims=True))
+            print("\t----------------------------log prob before reduce_sum----------------------------")
             print("\t", logprob)
-        logprob = tf.reduce_sum(logprob, axis=-1, keepdims=True)
-        if DEBUG_ACTOR:
-            print("\t----------------------------log probs after sum----------------------------")
+        logprob = tf.reduce_sum(logprob, axis=1, keepdims=True)
+        if DEBUG_ACTOR:           
+            print("\t----------------------------final log_probs----------------------------")
             print("\t", logprob)
             a = input("\n\n\tPress Enter to continue...")
         return squashed_actions, logprob
