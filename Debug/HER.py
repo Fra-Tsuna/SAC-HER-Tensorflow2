@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import time
+import random
 import numpy as np
 import tensorflow as tf
 from collections import namedtuple, deque
@@ -24,6 +25,7 @@ class HER_Buffer:
 
     def __init__(self, capacity):
         self.buffer = deque(maxlen=capacity)
+        random.seed()
 
     def __len__(self):
         return len(self.buffer)
@@ -57,30 +59,36 @@ class HER_Buffer:
             a = input("\tPress Enter to continue...")
         return hindsight_exp
 
-    def sample(self, minibatch_size=1):
+    def sample(self, minibatch_size=1, ere_ck=None):
         """
         Sample items from the buffer
 
         Parameters
         ----------
         minibatch: number of items to sample from the buffer
+        ere_ck: parameter ck of ERE algorithm which control sampling range
 
         Return
         -------
         items: hindsight experiences sampled from the buffer
         """
-        locations = np.random.choice(len(self.buffer), 
-                        minibatch_size, replace=False)
         items = []
-        if minibatch_size == 1:
-            items = self.buffer[locations[0]]
+        if ere_ck is None or ere_ck > len(self.buffer):
+            sample_range = len(self.buffer)
         else:
-            for index in locations:
-                items.append(self.buffer[index])
-        if DEBUG_SAMPLE:
+            sample_range = int(ere_ck)
+        locations = random.sample(
+            range((len(self.buffer)-sample_range), len(self.buffer)), minibatch_size)
+        for index in locations:
+            items.append(self.buffer[index])
+        if DEBUG_SAMPLE and len(self.buffer) > 30000:
             print("\n\n\t++++++++++++++++ DEBUG - SAMPLE [HER.SAMPLE] +++++++++++++++++\n")
             print("\t----------------------------indexes----------------------------")
             print("\t", locations)
+            print("\t----------------------------ere_ck----------------------------")
+            print("\t", ere_ck)
+            print("\t----------------------------sample_range----------------------------")
+            print("\t", sample_range)
             a = input("\n\n\tPress Enter to continue...")
         return items
 
