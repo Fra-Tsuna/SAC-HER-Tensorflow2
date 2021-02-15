@@ -14,9 +14,8 @@ from models import ActorNetwork, CriticNetwork, ValueNetwork
 # Learning parameters
 MINIBATCH_SAMPLE_SIZE = 256
 LEARNING_RATE = 0.001
-LR_TEMPERATURE = 3e-4
-MIN_TEMPERATURE = 0.05
-GAMMA = 0.98
+LR_TEMPERATURE = 0.001
+GAMMA = 0.95
 TAU = 0.005
 NORM_CLIP_RANGE = 5
 CLIP_MAX = 200
@@ -159,7 +158,6 @@ class HER_SAC_Agent:
                 raise TypeError("Wrong criterion for choosing the action. \
                                 [available 'random' or 'SAC']")                
             new_state, reward, done, info = self.env.step(action)
-            done = done or bool(info['is_success'])
             experiences.append(Experience(state, action, reward, new_state, done))
             if DEBUG_ACTION:
                 print("\n\n++++++++++++++++ DEBUG - TAKE ACTION [AGENT.PLAY_EPISODE] +++++++++++++++++\n")
@@ -182,13 +180,14 @@ class HER_SAC_Agent:
             print(experiences[0])
         return experiences
 
-    def optimization(self, minibatch=None):
+    def optimization(self, minibatch=None, ere_ck=None):
         """
         Update networks in order to learn the correct policy
 
         Parameters
         ----------
         minibatch: sample from the her buffer for the optimization
+        ere_ck: parameter ck of ERE algorithm which control sampling range
 
         Returns
         -------
@@ -197,7 +196,8 @@ class HER_SAC_Agent:
         # 1° step: unzip minibatch sampled from HER
         exp_actions, rewards, dones = [], [], []
         if minibatch is None:
-            minibatch = self.her_buffer.sample(MINIBATCH_SAMPLE_SIZE)
+            minibatch = self.her_buffer.sample(minibatch_size=MINIBATCH_SAMPLE_SIZE, 
+                                               ere_ck=ere_ck)
         for exp in minibatch:
             exp_actions.append(exp.action)
             rewards.append(exp.reward)
@@ -230,7 +230,8 @@ class HER_SAC_Agent:
             a = input("\n\nPress Enter to continue...")
 
         # 2° step: optimize value network
-        actions, log_probs = self.actor(states, noisy=False)
+        temperature = tf.exp(self.log_temperature)
+        actions, log_probs = self.actor(states, noisy=True)
         q1 = self.critic_1(states, actions)
         q2 = self.critic_2(states, actions)
         q = tf.minimum(q1, q2)
@@ -244,22 +245,25 @@ class HER_SAC_Agent:
             a = input("\n\nPress Enter to continue...")
         with tf.GradientTape() as value_tape:
             v = self.value(states)
-            value_loss = 0.5 * tf.reduce_mean(tf.square(v - (q-log_probs)))
+            if DEBUG_VALUE_OPTIM:
+                print("Loss argument 0.5 * tf.reduce_mean(tf.square(", (v - (q - temperature*log_probs)))
+                a = input("\n\nPress Enter to continue...")
+            value_loss = 0.5 * tf.reduce_mean(tf.square(v - (q - temperature*log_probs)))
         value_grads = value_tape.gradient(value_loss, self.value.trainable_variables)
         self.value_optimizer.apply_gradients(
             zip(value_grads, self.value.trainable_variables))
 
         # 3° step: optimize critic networks
         v_tgt = self.target_value(new_states)
-        q_tgt = (1/tf.exp(self.log_temperature))*rewards + GAMMA*([not d for d in dones]*tf.reshape(v_tgt, -1))
+        q_tgt = rewards + GAMMA*([not d for d in dones]*tf.reshape(v_tgt, -1))
         q_tgt = tf.reshape(q_tgt, (len(rewards), 1))
         if DEBUG_CRITIC_OPTIM:
             print("\n\n++++++++++++++++ DEBUG - CRITIC OPTIMIZATION [AGENT.OPTIMIZATION] +++++++++++++++++\n")
             print("----------------------------values----------------------------")
             print("v target = ", v_tgt)
+            print("v target reshaped = ", tf.reshape(v_tgt, -1))
             print("q target = ", q_tgt)
             print("----------------------------operations----------------------------")
-            print("1/alpha * rewards= ", (1/tf.exp(self.log_temperature))*rewards)
             print("GAMMA*([not d for d in dones]*v_tgt_reshaped) = ", GAMMA*([not d for d in dones]*tf.reshape(v_tgt, -1)))
             a = input("\n\nPress Enter to continue...")
         with tf.GradientTape() as critic1_tape:
@@ -269,6 +273,7 @@ class HER_SAC_Agent:
                 print("q1 = ", q1)
                 print("q_tgt = ", q_tgt)
                 print("q1 - qtgt = ", (q1-q_tgt))
+                print("Loss argument 0.5 * tf.reduce_mean(tf.square(", (q1-q_tgt))
                 a = input("\n\nPress Enter to continue...")
             critic1_loss = 0.5 * tf.reduce_mean(tf.square(q1 - q_tgt))
         with tf.GradientTape() as critic2_tape:
@@ -280,20 +285,29 @@ class HER_SAC_Agent:
             zip(critic1_grads, self.critic_1.trainable_variables))
         self.critic2_optimizer.apply_gradients(
             zip(critic2_grads, self.critic_2.trainable_variables))
-
+ 
         # 4° step: optimize actor network
         with tf.GradientTape() as actor_tape:
             actions, log_probs = self.actor(states, noisy=True)
             q1 = self.critic_1(states, actions)
             q2 = self.critic_2(states, actions)
             q = tf.minimum(q1, q2)
-            actor_loss = tf.reduce_mean(log_probs - q)
+            if DEBUG_ACTOR_OPTIM:
+                print("----------------------------values in tape----------------------------")
+                print("q = ", q)
+                print("log_probs = ", log_probs)
+                print("log_probs - q = ", (log_probs-q))
+                print("temp * log_probs = ", temperature*log_probs)
+                print("temp * log_probs - q = ", temperature*log_probs - q)
+                print("Loss argument 0.5 * tf.reduce_mean(", (temperature*log_probs - q))
+                a = input("\n\nPress Enter to continue...")
+            actor_loss = tf.reduce_mean(temperature*log_probs - q)
         actor_grads = actor_tape.gradient(actor_loss, self.actor.trainable_variables)
         self.actor_optimizer.apply_gradients(
             zip(actor_grads, self.actor.trainable_variables))
 
         # 5° step: optimize temperature parameter
-        if not isinstance(self.log_temperature, float):
+        if isinstance(self.log_temperature, tf.Variable):
             actions, log_probs = self.actor(states, noisy=False)
             with tf.GradientTape() as temperature_tape: 
                 temperature_loss = \
@@ -303,8 +317,8 @@ class HER_SAC_Agent:
                 temperature_tape.gradient(temperature_loss, [self.log_temperature])
             self.temperature_optimizer.apply_gradients(
                 zip(temperature_grads, [self.log_temperature]))
-            self.log_temperature.assign(tf.maximum(self.log_temperature, 
-                tf.Variable(tf.math.log(MIN_TEMPERATURE), dtype=tf.float32)))
+        else:
+            temperature_loss = None
 
         return value_loss, critic1_loss, critic2_loss, actor_loss, temperature_loss
 
