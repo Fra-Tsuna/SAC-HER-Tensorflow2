@@ -16,7 +16,9 @@ CRITIC_DENSE_2 = 256
 VALUE_DENSE_1 = 256
 VALUE_DENSE_2 = 256
 
-NOISE = 1e-8
+NOISE = 1e-6
+LOG_STD_MIN = -20
+LOG_STD_MAX = 2
 
 
 class ActorNetwork(Model):
@@ -33,17 +35,17 @@ class ActorNetwork(Model):
         x = self.layer_2(self.layer_1(self.input_layer(state)))
         mean = self.mean(x)
         log_std = self.log_std_dev(x)
-        log_std_clipped = tf.clip_by_value(log_std, NOISE, 1)
-        policy = tfp.distributions.Normal(mean, tf.exp(log_std_clipped))
+        log_std_clipped = tf.clip_by_value(log_std, LOG_STD_MIN, LOG_STD_MAX)
+        std_dev = tf.exp(log_std_clipped)
+        policy = tfp.distributions.Normal(mean, std_dev)
         noise = tfp.distributions.Normal(0,1).sample()
         if noisy:
-            action_sample = mean + noise*tf.exp(log_std_clipped)
+            action_sample = mean + noise*std_dev
         else:
             action_sample = policy.sample()
         squashed_actions = tf.tanh(action_sample)
-        logprob = (policy.log_prob(action_sample) - 
-                   tf.math.log(1.0 - tf.pow(squashed_actions, 2) + NOISE))
-        logprob = tf.reduce_sum(logprob, axis=-1, keepdims=True)
+        logprob = policy.log_prob(action_sample) - tf.math.log(1.0 - tf.pow(squashed_actions, 2) + NOISE)
+        logprob = tf.reduce_sum(logprob, axis=1, keepdims=True)
         return squashed_actions, logprob
 
 
