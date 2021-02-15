@@ -25,6 +25,7 @@ import os
 # Environment 
 ENV_NAME = "FetchPush-v1"
 LOG_DIR = "/home/gianfranco/Desktop/FetchLog"
+EPISODE_LEN = 50
 
 # Training 
 TRAINING_EPOCHES = 200
@@ -40,9 +41,13 @@ MINIBATCH_SAMPLE_SIZE = 256
 STRATEGY = "future"
 FUTURE_K = 4
 
+# ERE
+CMIN = 5000
+ETA = 0.922
+
 # Learning parameters
 EPSILON_START = 1.
-EPSILON_NEXT = 0.001
+EPSILON_NEXT = 0.
 
 # ____________________________________________________ Classes ____________________________________________________ #
 
@@ -85,12 +90,13 @@ if __name__ == '__main__':
     # Pre-training initialization
     iterations = 0
     loss_vect = []
+    reward_vect = []
     epsilon = EPSILON_START
 
     # Training 
     for epoch in range(TRAINING_EPOCHES):
         #print("\n\n___________ TRAINING EPOCH ", epoch, "___________\n")
-        reward_vect = []
+        box_displ = 0
 
         ## play batch of cycles
         for cycle in range(BATCH_SIZE):
@@ -104,6 +110,10 @@ if __name__ == '__main__':
                 goal = experiences[0].state['desired_goal']
                 iterations += len(experiences)
                 played_experiences += len(experiences)
+                if (agent.env.compute_reward(experiences[0].new_state['achieved_goal'], 
+                                             experiences[-1].new_state['achieved_goal'], 
+                                             None)) == 0:
+                    box_displ += 1
                 for t in range(len(experiences)):
                     reward_vect.append(experiences[t].reward)
                     achieved_goal = experiences[t].new_state['achieved_goal']
@@ -129,31 +139,40 @@ if __name__ == '__main__':
                     else:
                         raise TypeError("Wrong strategy for goal sampling." +
                                         " [available 'final', 'future']")   
-                        
-                #### print results
-                mean_reward = np.mean(reward_vect)
+
+            ### print results
+            if iterations > 2500:
+                mean_reward = np.mean(reward_vect[-2500:])
                 writer.add_scalar("mean_reward", mean_reward, iterations)
 
             ### normalization
             agent.update_normalizer(batch=hindsight_experiences, hindsight=True)
 
-            ### optimization
+            ### optimization + ERE 
             if iterations >= TRAINING_START_STEPS:
+                k = 0
                 epsilon = EPSILON_NEXT
-                for opt_step in range(min(played_experiences, OPTIMIZATION_STEPS)):
-                    v_loss, c1_loss, c2_loss, act_loss = \
+                opt_steps = min(played_experiences, OPTIMIZATION_STEPS)
+                for step in range(opt_steps):
+                    ck = max(HER_CAPACITY*pow(ETA, k*(EPISODE_LEN/opt_steps)), CMIN)
+                    v_loss, c1_loss, c2_loss, act_loss, temp_loss = \
                         agent.optimization()
                     agent.soft_update()
-            #print("\tTemperature: ", agent.getTemperature())
+                    k += 1
+            #print("\tTemperature: ", agent.getTemperature())                 
+            #writer.add_scalar("temperature", agent.getTemperature(), iterations)
 
         ## evaluation
+        print("\tBox displacements = ", box_displ)
         print("\n\nEVALUATION\n\n")
         success_rates = []
         for _ in range(EVAL_EPISODES):
             experiences = agent.play_episode(criterion="SAC", epsilon=0)
             total_reward = sum([exp.reward for exp in experiences])
+            #success_rate = (len(experiences) + total_reward) / len(experiences)  
             success_rate = total_reward / len(experiences)
             success_rates.append(success_rate)
         success_rate = sum(success_rates) / len(success_rates)
         print("Success_rate = ", success_rate)
+        writer.add_scalar("box displacements per epoch", box_displ, epoch)
         writer.add_scalar("mean success rate per epoch", success_rate, epoch)
