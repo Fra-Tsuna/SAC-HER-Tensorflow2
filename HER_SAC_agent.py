@@ -144,13 +144,14 @@ class HER_SAC_Agent:
             state = new_state
         return experiences
 
-    def optimization(self, minibatch=None):
+    def optimization(self, minibatch=None, ere_ck=None):
         """
         Update networks in order to learn the correct policy
 
         Parameters
         ----------
         minibatch: sample from the her buffer for the optimization
+        ere_ck: parameter ck of ERE algorithm which control sampling range
 
         Returns
         -------
