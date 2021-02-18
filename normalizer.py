@@ -7,6 +7,10 @@ import tensorflow as tf
 
 NORMALIZATION = "Gaussian"
 
+"""
+Based on https://github.com/TianhongDai/hindsight-experience-replay/blob/master/mpi_utils/normalizer.py
+"""
+
 
 class Normalizer:
     
