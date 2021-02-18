@@ -16,9 +16,6 @@ import numpy as np
 from HER import HER_Buffer, Experience
 from HER_SAC_agent import HER_SAC_Agent
 
-# System
-import os
-
 # ___________________________________________________ Parameters ___________________________________________________ #
 
 
@@ -26,9 +23,10 @@ import os
 ENV_NAME = "FetchPush-v1"
 LOG_DIR = "/home/gianfranco/Desktop/FetchLog"
 EPISODE_LEN = 50
+ENV_WRAPPED = True
 
 # Training 
-TRAINING_EPOCHES = 200
+TRAINING_EPOCHES = 400
 BATCH_SIZE = 50
 CYCLE_EPISODES = 1
 TRAINING_START_STEPS = 1000
@@ -48,11 +46,13 @@ ETA = 0.922
 # Learning parameters
 EPSILON_START = 1.
 EPSILON_NEXT = 0.
+TEMPERATURE = "auto"
 
 # Debug 
 DEBUG_EPISODE_EXP = False
 DEBUG_STORE_EXP = False
 DEBUG_MINIBATCH_SAMPLE = False
+DEBUG_LOSS = False
 
 # ____________________________________________________ Classes ____________________________________________________ #
 
@@ -83,11 +83,12 @@ if __name__ == '__main__':
 
     # Environment initialization
     env = gym.make(ENV_NAME)
-    env = DoneOnSuccessWrapper(env)
+    if ENV_WRAPPED:
+        env = DoneOnSuccessWrapper(env)
 
     # Agent initialization
     her_buff = HER_Buffer(HER_CAPACITY)
-    agent = HER_SAC_Agent(env, her_buff, temperature=0.05)
+    agent = HER_SAC_Agent(env, her_buff, temperature=TEMPERATURE)
 
     # Summary writer for live trends
     writer = SummaryWriter(log_dir=LOG_DIR, comment="NoComment")
@@ -180,26 +181,52 @@ if __name__ == '__main__':
                 k = 0
                 epsilon = EPSILON_NEXT
                 opt_steps = min(played_experiences, OPTIMIZATION_STEPS)
+                v_losses, c1_losses, c2_losses, act_losses, temp_losses = [], [], [], [], []
                 for step in range(opt_steps):
                     ck = max(HER_CAPACITY*pow(ETA, k*(EPISODE_LEN/opt_steps)), CMIN)
                     v_loss, c1_loss, c2_loss, act_loss, temp_loss = \
-                        agent.optimization()
+                        agent.optimization(ere_ck=ck)
                     agent.soft_update()
+                    v_losses.append(v_loss)
+                    c1_losses.append(c1_loss)
+                    c2_losses.append(c2_loss)
+                    act_losses.append(act_loss)
+                    temp_losses.append(temp_loss)
                     k += 1
-            #print("\tTemperature: ", agent.getTemperature())                       # For temperature decay
-            #writer.add_scalar("temperature", agent.getTemperature(), iterations)
+                if DEBUG_LOSS:
+                    v_mean_loss = np.mean(v_losses)
+                    c1_mean_loss = np.mean(c1_losses)
+                    c2_mean_loss = np.mean(c2_losses)
+                    act_mean_loss = np.mean(act_losses)
+                    print("\n\n++++++++++++++++ DEBUG - LOSSES [MAIN.POST-OPTIMIZATION] +++++++++++++++++\n")
+                    print("----------------------------values----------------------------")
+                    print("Value loss = ", v_mean_loss)
+                    print("Critic_1 loss = ", c1_mean_loss)
+                    print("Critic_2 loss = ", c2_mean_loss)
+                    print("Actor loss = ", act_mean_loss)
+                    if TEMPERATURE == "auto":
+                        temp_mean_loss = np.mean(temp_losses)
+                        print("Temperature loss = ", temp_mean_loss)
+                    print("--------------------------------------------------------------\n")
+            if TEMPERATURE == "auto":
+                print("\n\tTemperature: ", agent.getTemperature())                  
+                writer.add_scalar("temperature", agent.getTemperature(), iterations)
 
         ## evaluation
-        print("\tBox displacements = ", box_displ)
+        if ENV_NAME == "FetchPush-v1":
+            print("\tBox displacements = ", box_displ)
         print("\n\nEVALUATION\n\n")
         success_rates = []
         for _ in range(EVAL_EPISODES):
             experiences = agent.play_episode(criterion="SAC", epsilon=0)
             total_reward = sum([exp.reward for exp in experiences])
-            #success_rate = (len(experiences) + total_reward) / len(experiences)    # For not wrapped env
-            success_rate = total_reward / len(experiences)
+            if ENV_WRAPPED:
+                success_rate = total_reward / len(experiences)
+            else:
+                success_rate = (len(experiences) + total_reward) / len(experiences)
             success_rates.append(success_rate)
         success_rate = sum(success_rates) / len(success_rates)
         print("Success_rate = ", success_rate)
-        writer.add_scalar("box displacements per epoch", box_displ, epoch)
+        if ENV_NAME == "FetchPush-v1":
+            writer.add_scalar("box displacements per epoch", box_displ, epoch)
         writer.add_scalar("mean success rate per epoch", success_rate, epoch)
