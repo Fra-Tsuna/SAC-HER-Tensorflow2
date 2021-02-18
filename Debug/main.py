@@ -21,7 +21,9 @@ from HER_SAC_agent import HER_SAC_Agent
 
 # Environment 
 ENV_NAME = "FetchPush-v1"
-LOG_DIR = "/home/gianfranco/Desktop/FetchLog"
+GIANFRANCO_LOG_DIR = "/home/gianfranco/Desktop/FetchLog"
+FRANCESCO_LOG_DIR = "/home/francesco/Scrivania/Test"
+LOG_DIR = GIANFRANCO_LOG_DIR
 EPISODE_LEN = 50
 ENV_WRAPPED = True
 
