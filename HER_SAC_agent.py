@@ -13,9 +13,9 @@ from models import ActorNetwork, CriticNetwork, ValueNetwork
 
 # Learning parameters
 MINIBATCH_SAMPLE_SIZE = 256
-LEARNING_RATE = 3e-4
-LR_TEMPERATURE = 3e-4
-GAMMA = 0.98
+LEARNING_RATE = 0.001
+LR_TEMPERATURE = 0.001
+GAMMA = 0.95
 TAU = 0.005
 NORM_CLIP_RANGE = 5
 CLIP_MAX = 200
@@ -27,6 +27,7 @@ class HER_SAC_Agent:
 
         # env
         self.env = env
+        self.render = True
         self.her_buffer = her_buffer
         self.starting_state = self.env.reset()
         self.max_timesteps = self.env.spec.max_episode_steps
@@ -122,7 +123,8 @@ class HER_SAC_Agent:
         t = 0
         while t < self.max_timesteps and not done:
             t += 1
-            self.env.render()
+            if self.render:
+                self.env.render()
             if criterion == "random":
                 action = self.env.action_space.sample()
             elif criterion == "SAC":
