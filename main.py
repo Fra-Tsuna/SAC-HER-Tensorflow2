@@ -16,9 +16,6 @@ import numpy as np
 from HER import HER_Buffer, Experience
 from HER_SAC_agent import HER_SAC_Agent
 
-# System
-import os
-
 # ___________________________________________________ Parameters ___________________________________________________ #
 
 
@@ -26,6 +23,7 @@ import os
 ENV_NAME = "FetchPush-v1"
 LOG_DIR = "/home/gianfranco/Desktop/FetchLog"
 EPISODE_LEN = 50
+ENV_WRAPPED = True
 
 # Training 
 TRAINING_EPOCHES = 200
@@ -48,6 +46,7 @@ ETA = 0.922
 # Learning parameters
 EPSILON_START = 1.
 EPSILON_NEXT = 0.
+TEMPERATURE = "auto"
 
 # ____________________________________________________ Classes ____________________________________________________ #
 
@@ -78,11 +77,12 @@ if __name__ == '__main__':
 
     # Environment initialization
     env = gym.make(ENV_NAME)
-    env = DoneOnSuccessWrapper(env)
+    if ENV_WRAPPED:
+        env = DoneOnSuccessWrapper(env)
 
     # Agent initialization
     her_buff = HER_Buffer(HER_CAPACITY)
-    agent = HER_SAC_Agent(env, her_buff, temperature=0.03)
+    agent = HER_SAC_Agent(env, her_buff, temperature=TEMPERATURE)
 
     # Summary writer for live trends
     writer = SummaryWriter(log_dir=LOG_DIR, comment="NoComment")
@@ -159,20 +159,25 @@ if __name__ == '__main__':
                         agent.optimization()
                     agent.soft_update()
                     k += 1
-            #print("\tTemperature: ", agent.getTemperature())                 
-            #writer.add_scalar("temperature", agent.getTemperature(), iterations)
+            if TEMPERATURE == "auto":
+                print("\n\tTemperature: ", agent.getTemperature())                  
+                writer.add_scalar("temperature", agent.getTemperature(), iterations)
 
         ## evaluation
-        print("\tBox displacements = ", box_displ)
+        if ENV_NAME == "FetchPush-v1":
+            print("\tBox displacements = ", box_displ)
         print("\n\nEVALUATION\n\n")
         success_rates = []
         for _ in range(EVAL_EPISODES):
             experiences = agent.play_episode(criterion="SAC", epsilon=0)
             total_reward = sum([exp.reward for exp in experiences])
-            #success_rate = (len(experiences) + total_reward) / len(experiences)  
-            success_rate = total_reward / len(experiences)
+            if ENV_WRAPPED:
+                success_rate = total_reward / len(experiences)
+            else:
+                success_rate = (len(experiences) + total_reward) / len(experiences)
             success_rates.append(success_rate)
         success_rate = sum(success_rates) / len(success_rates)
         print("Success_rate = ", success_rate)
-        writer.add_scalar("box displacements per epoch", box_displ, epoch)
+        if ENV_NAME == "FetchPush-v1":
+            writer.add_scalar("box displacements per epoch", box_displ, epoch)
         writer.add_scalar("mean success rate per epoch", success_rate, epoch)
