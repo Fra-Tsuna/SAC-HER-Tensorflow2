@@ -21,7 +21,8 @@ LOG_STD_MIN = -20
 LOG_STD_MAX = 2
 
 # debug parameters
-DEBUG_ACTOR = False
+DEBUG_ACTOR_NET = False
+DEBUG_ACTOR_SAMPLE = False
 DEBUG_VALUE = False
 DEBUG_TARGET = False
 
@@ -36,7 +37,7 @@ class ActorNetwork(Model):
         self.mean = layers.Dense(action_dim)
         self.log_std_dev = layers.Dense(action_dim)
 
-    def call(self, state, noisy=True):
+    def call(self, state, noisy=False):
         x = self.layer_2(self.layer_1(self.input_layer(state)))
         mean = self.mean(x)
         log_std = self.log_std_dev(x)
@@ -44,40 +45,51 @@ class ActorNetwork(Model):
         std_dev = tf.exp(log_std_clipped)
         policy = tfp.distributions.Normal(mean, std_dev)
         noise = tfp.distributions.Normal(0,1).sample()
-        if DEBUG_ACTOR:
+        if DEBUG_ACTOR_NET:
             print("\n\n\t++++++++++++++++ DEBUG - ACTOR NET [ACTOR.CALL]++++++++++++++++\n")
             print("\t----------------------------input_actor----------------------------")
             print("\t", state)
             print("\t----------------------------mean----------------------------")
             print("\t", mean)
+            print("\t----------------------------max-min mean----------------------------")
+            print("\t", max(mean.numpy()[0]), "-",min(mean.numpy()[0]))
             print("\t----------------------------log_std----------------------------")
             print("\t", log_std)
+            print("\t----------------------------max-min log_std----------------------------")
+            print("\t", max(log_std.numpy()[0]), "-", min(log_std.numpy()[0]))
             print("\t----------------------------log_std_clipped----------------------------")
             print("\t", log_std_clipped)
             print("\t----------------------------noise----------------------------")
             print("\t", noise)
+            a = input("\n\n\tPress Enter to continue...")
         if noisy:
             action_sample = mean + noise*std_dev
-            if DEBUG_ACTOR:
+            if DEBUG_ACTOR_SAMPLE:
+                print("\n\n\t++++++++++++++++ DEBUG - ACTOR SAMPLE [ACTOR.CALL]++++++++++++++++\n")
                 print("\t----------------------------action noisy----------------------------")
         else:
             action_sample = policy.sample()
-            if DEBUG_ACTOR:
+            if DEBUG_ACTOR_SAMPLE:
+                print("\n\n\t++++++++++++++++ DEBUG - ACTOR SAMPLE [ACTOR.CALL]++++++++++++++++\n")
                 print("\t----------------------------normal action----------------------------")
         squashed_actions = tf.tanh(action_sample)
         logprob = policy.log_prob(action_sample) - tf.math.log(1.0 - tf.pow(squashed_actions, 2) + NOISE)
-        if DEBUG_ACTOR:
+        if DEBUG_ACTOR_SAMPLE:
             print("\t", action_sample)
             print("\t----------------------------squashed action----------------------------")
             print("\t", squashed_actions)
             print("\t----------------------------policy.log_prob----------------------------")
             print("\t", policy.log_prob(action_sample))
+            print("\t----------------------------policy.log_prob after sum----------------------------")
+            print("\t", tf.reduce_sum(policy.log_prob(action_sample), axis=1, keepdims=True))
             print("\t----------------------------tf.math.log(1.0 - tf.pow(squashed_actions, 2) + NOISE----------------------------")
+            print("\t", tf.math.log(1.0 - squashed_actions**2 + NOISE))
+            print("\t----------------------------// after sum----------------------------")
             print("\t", tf.reduce_sum(tf.math.log(1.0 - squashed_actions**2 + NOISE), axis=1, keepdims=True))
             print("\t----------------------------log prob before reduce_sum----------------------------")
             print("\t", logprob)
         logprob = tf.reduce_sum(logprob, axis=1, keepdims=True)
-        if DEBUG_ACTOR:           
+        if DEBUG_ACTOR_SAMPLE:           
             print("\t----------------------------final log_probs----------------------------")
             print("\t", logprob)
             a = input("\n\n\tPress Enter to continue...")
