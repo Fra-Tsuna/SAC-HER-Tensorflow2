@@ -23,6 +23,7 @@ CLIP_MAX = 200
 # Debug parameters
 DEBUG_STATE = False
 DEBUG_ACTION = False
+DEBUG_POST_ACT = False
 DEBUG_LAST_EXP = False
 DEBUG_FIRST_EXP = False
 DEBUG_NORM_SAMPLE = False
@@ -34,10 +35,12 @@ DEBUG_ACTOR_OPTIM = False
 
 class HER_SAC_Agent:
 
-    def __init__(self, env, her_buffer, temperature="auto", optimizer='Adam'):
+    def __init__(self, env, her_buffer, temperature="auto", optimizer='Rectified_Adam'):
 
         # env
         self.env = env
+        self.render = True
+        self.iterations = 0
         self.her_buffer = her_buffer
         self.starting_state = self.env.reset()
         self.max_timesteps = self.env.spec.max_episode_steps
@@ -100,6 +103,19 @@ class HER_SAC_Agent:
             raise TypeError("Wrong or not supported optimizer. \
                             [availiable 'Adam' or 'Rectified_Adam']")
 
+        # debug switches and params
+        self.debug_state = DEBUG_STATE
+        self.debug_action = DEBUG_ACTION
+        self.debug_post_act = DEBUG_POST_ACT
+        self.debug_last_exp = DEBUG_LAST_EXP
+        self.debug_first_exp = DEBUG_FIRST_EXP
+        self.debug_norm_sample = DEBUG_NORM_SAMPLE
+        self.debug_rew_act_done = DEBUG_REW_ACT_DONE
+        self.debug_value_optim = DEBUG_VALUE_OPTIM
+        self.debug_critic_optim = DEBUG_CRITIC_OPTIM
+        self.debug_actor_optim = DEBUG_ACTOR_OPTIM
+        self.iterations = 0
+
     def getBuffer(self):
         """
         return the replay buffer of the agent
@@ -133,7 +149,8 @@ class HER_SAC_Agent:
         t = 0
         while t < self.max_timesteps and not done:
             t += 1
-            self.env.render()
+            if self.render:
+                self.env.render()
             if criterion == "random":
                 action = self.env.action_space.sample()
             elif criterion == "SAC":
@@ -145,7 +162,7 @@ class HER_SAC_Agent:
                     obs_goal = \
                         np.concatenate([obs_norm, goal_norm])
                     obs_goal = np.array(obs_goal, ndmin=2)
-                    if DEBUG_STATE:
+                    if self.debug_state:
                         print("++++++++++++++++ DEBUG - STATE [AGENT.PLAY_EPISODE] ++++++++++++++++\n")
                         print("----------------------------state----------------------------")
                         print(state)
@@ -154,28 +171,34 @@ class HER_SAC_Agent:
                         a = input("\n\nPress Enter to continue...")
                     action, _ = self.actor(obs_goal, noisy=False)
                     action = action.numpy()[0]
+                    if self.debug_action:
+                        print("\n\n++++++++++++++++ DEBUG - TAKE ACTION [AGENT.PLAY_EPISODE] +++++++++++++++++\n")
+                        print("----------------------------action to take----------------------------")
+                        print(action)
+                        print("----------------------------log probs returned----------------------------")
+                        print(_)
+                        a = input("Press Enter to continue...")
             else:
                 raise TypeError("Wrong criterion for choosing the action. \
                                 [available 'random' or 'SAC']")                
             new_state, reward, done, info = self.env.step(action)
+            self.iterations += 1
             experiences.append(Experience(state, action, reward, new_state, done))
-            if DEBUG_ACTION:
-                print("\n\n++++++++++++++++ DEBUG - TAKE ACTION [AGENT.PLAY_EPISODE] +++++++++++++++++\n")
-                print("----------------------------action to take----------------------------")
-                print(action)
+            if self.debug_post_act:
                 print("----------------------------new state----------------------------")
                 print(new_state)
                 print("----------------------------reward----------------------------")
                 print(reward)
                 print("----------------------------done----------------------------")
+                print(done)
                 print("----------------------------experience appended----------------------------")
                 print(experiences[0])
                 a = input("\n\nPress Enter to continue...")
             state = new_state
-        if DEBUG_LAST_EXP:
+        if self.debug_last_exp:
             print("\n\n++++++++++++++++ DEBUG - LAST EXPERIENCE [AGENT.PLAY_EPISODE] +++++++++++++++++\n")
             print(experiences[-1])
-        if DEBUG_FIRST_EXP:
+        if self.debug_first_exp:
             print("\n\n++++++++++++++++ DEBUG - FIRST EXPERIENCE [AGENT.PLAY_EPISODE] +++++++++++++++++\n")
             print(experiences[0])
         return experiences
@@ -204,7 +227,7 @@ class HER_SAC_Agent:
             dones.append(exp.done)
         states, new_states = self.preprocess_inputs(minibatch)
         del minibatch
-        if DEBUG_NORM_SAMPLE:
+        if self.debug_norm_sample:
             print("\n\n++++++++++++++++ DEBUG - HER NORM STATES/GOAL [AGENT.OPTIMIZATION] +++++++++++++++++\n")
             print("----------------------------element 0----------------------------")
             print(states[0][0:-self.goal_size])
@@ -219,7 +242,7 @@ class HER_SAC_Agent:
             print(states[elem][-self.goal_size:])
             a = input("\n\nPress Enter to continue...") 
 
-        if DEBUG_REW_ACT_DONE:
+        if self.debug_rew_act_done:
             print("\n\n++++++++++++++++ DEBUG - HER SAMPLE REWARDS ACTIONS DONES [AGENT.OPTIMIZATION] +++++++++++++++++\n")
             print("----------------------------rewards----------------------------")
             print(rewards)
@@ -231,11 +254,11 @@ class HER_SAC_Agent:
 
         # 2° step: optimize value network
         temperature = tf.exp(self.log_temperature)
-        actions, log_probs = self.actor(states, noisy=True)
+        actions, log_probs = self.actor(states, noisy=False)
         q1 = self.critic_1(states, actions)
         q2 = self.critic_2(states, actions)
         q = tf.minimum(q1, q2)
-        if DEBUG_VALUE_OPTIM:
+        if self.debug_value_optim:
             print("\n\n++++++++++++++++ DEBUG - VALUE OPTIMIZATION [AGENT.OPTIMIZATION] +++++++++++++++++\n")
             print("----------------------------shapes----------------------------")
             print("actions = ", actions.shape)
@@ -245,7 +268,7 @@ class HER_SAC_Agent:
             a = input("\n\nPress Enter to continue...")
         with tf.GradientTape() as value_tape:
             v = self.value(states)
-            if DEBUG_VALUE_OPTIM:
+            if self.debug_value_optim:
                 print("Loss argument 0.5 * tf.reduce_mean(tf.square(", (v - (q - temperature*log_probs)))
                 a = input("\n\nPress Enter to continue...")
             value_loss = 0.5 * tf.reduce_mean(tf.square(v - (q - temperature*log_probs)))
@@ -257,7 +280,7 @@ class HER_SAC_Agent:
         v_tgt = self.target_value(new_states)
         q_tgt = rewards + GAMMA*([not d for d in dones]*tf.reshape(v_tgt, -1))
         q_tgt = tf.reshape(q_tgt, (len(rewards), 1))
-        if DEBUG_CRITIC_OPTIM:
+        if self.debug_critic_optim:
             print("\n\n++++++++++++++++ DEBUG - CRITIC OPTIMIZATION [AGENT.OPTIMIZATION] +++++++++++++++++\n")
             print("----------------------------values----------------------------")
             print("v target = ", v_tgt)
@@ -268,7 +291,7 @@ class HER_SAC_Agent:
             a = input("\n\nPress Enter to continue...")
         with tf.GradientTape() as critic1_tape:
             q1 = self.critic_1(states, exp_actions)
-            if DEBUG_CRITIC_OPTIM:
+            if self.debug_critic_optim:
                 print("----------------------------values in tape----------------------------")
                 print("q1 = ", q1)
                 print("q_tgt = ", q_tgt)
@@ -292,7 +315,7 @@ class HER_SAC_Agent:
             q1 = self.critic_1(states, actions)
             q2 = self.critic_2(states, actions)
             q = tf.minimum(q1, q2)
-            if DEBUG_ACTOR_OPTIM:
+            if self.debug_actor_optim:
                 print("----------------------------values in tape----------------------------")
                 print("q = ", q)
                 print("log_probs = ", log_probs)
