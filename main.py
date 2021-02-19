@@ -55,6 +55,7 @@ TEMPERATURE = "auto"
 
 class DoneOnSuccessWrapper(gym.Wrapper):
     """
+    [ BASED ON STABLE-BASELINES WRAPPER ]
     Reset on success and offsets the reward.
     Useful for GoalEnv.
     """
