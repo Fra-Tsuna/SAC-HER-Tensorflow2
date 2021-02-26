@@ -29,7 +29,7 @@ ENV_WRAPPED = True
 
 # Training 
 TRAINING_EPOCHES = 200
-BATCH_SIZE = 50
+N_CYCLES = 50
 CYCLE_EPISODES = 1
 TRAINING_START_STEPS = 1000
 OPTIMIZATION_STEPS = 50
@@ -102,7 +102,7 @@ if __name__ == '__main__':
         box_displ = 0
 
         ## play batch of cycles
-        for cycle in range(BATCH_SIZE):
+        for cycle in range(N_CYCLES):
             print("Epoch ", epoch, "- Cycle ", cycle)
             hindsight_experiences = []
             played_experiences = 0
